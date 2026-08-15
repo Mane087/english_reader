@@ -1,0 +1,260 @@
+import threading
+from pathlib import Path
+
+import numpy as np
+import sounddevice as sd
+import soundfile as sf
+from AVFoundation import AVAudioPlayer
+from Foundation import NSURL
+
+
+RECORDING_FILE = Path(__file__).parent / "shadowing_recording.wav"
+
+_recording_stream = None
+_recording_frames = []
+_recording_lock = threading.Lock()
+_recording_sample_rate = 44_100
+_recording_active = False
+_recording_player = None
+
+
+def _recording_callback(indata, frames, time_info, status):
+    del frames, time_info, status
+
+    with _recording_lock:
+        _recording_frames.append(indata.copy())
+
+
+def start_recording() -> int:
+    global _recording_stream
+    global _recording_frames
+    global _recording_sample_rate
+    global _recording_active
+
+    if _recording_active:
+        raise RuntimeError("A recording is already in progress.")
+
+    stop_recording_playback()
+
+    device = sd.query_devices(kind="input")
+    sample_rate = int(
+        device.get("default_samplerate")
+        or 44_100
+    )
+
+    with _recording_lock:
+        _recording_frames = []
+
+    stream = sd.InputStream(
+        samplerate=sample_rate,
+        channels=1,
+        dtype="float32",
+        callback=_recording_callback,
+    )
+
+    try:
+        stream.start()
+    except Exception:
+        stream.close()
+        raise
+
+    _recording_stream = stream
+    _recording_sample_rate = sample_rate
+    _recording_active = True
+
+    return sample_rate
+
+
+def stop_recording() -> float:
+    global _recording_stream
+    global _recording_active
+    global _recording_frames
+
+    if not _recording_active or _recording_stream is None:
+        raise RuntimeError("No recording is currently in progress.")
+
+    stream = _recording_stream
+
+    _recording_active = False
+    _recording_stream = None
+
+    try:
+        stream.stop()
+    finally:
+        stream.close()
+
+    with _recording_lock:
+        chunks = list(_recording_frames)
+        _recording_frames = []
+
+    if not chunks:
+        raise RuntimeError(
+            "No microphone audio was captured. "
+            "Check the selected input device and microphone permission."
+        )
+
+    audio = np.concatenate(chunks, axis=0)
+
+    if audio.size == 0:
+        raise RuntimeError("The recording is empty.")
+
+    sf.write(
+        RECORDING_FILE,
+        audio,
+        _recording_sample_rate,
+        subtype="PCM_16",
+    )
+
+    return float(
+        len(audio) / _recording_sample_rate
+    )
+
+
+def cancel_recording() -> None:
+    global _recording_stream
+    global _recording_active
+    global _recording_frames
+
+    stream = _recording_stream
+
+    _recording_active = False
+    _recording_stream = None
+
+    if stream is not None:
+        try:
+            stream.stop()
+        except Exception:
+            pass
+
+        try:
+            stream.close()
+        except Exception:
+            pass
+
+    with _recording_lock:
+        _recording_frames = []
+
+
+def is_recording() -> bool:
+    return _recording_active
+
+
+def has_recording() -> bool:
+    return RECORDING_FILE.exists()
+
+
+def clear_recording() -> None:
+    stop_recording_playback()
+    RECORDING_FILE.unlink(missing_ok=True)
+
+
+def get_recording_duration() -> float:
+    if not RECORDING_FILE.exists():
+        return 0.0
+
+    return float(
+        sf.info(RECORDING_FILE).duration
+    )
+
+
+def play_recording() -> None:
+    global _recording_player
+
+    if not RECORDING_FILE.exists():
+        raise FileNotFoundError(
+            f"Recording not found: {RECORDING_FILE}"
+        )
+
+    stop_recording_playback()
+
+    url = NSURL.fileURLWithPath_(
+        str(RECORDING_FILE)
+    )
+
+    player, error = (
+        AVAudioPlayer
+        .alloc()
+        .initWithContentsOfURL_error_(
+            url,
+            None,
+        )
+    )
+
+    if player is None:
+        raise RuntimeError(
+            f"Unable to load recording: {error}"
+        )
+
+    _recording_player = player
+    _recording_player.prepareToPlay()
+    _recording_player.play()
+
+
+def stop_recording_playback() -> None:
+    global _recording_player
+
+    if _recording_player is None:
+        return
+
+    _recording_player.stop()
+    _recording_player = None
+
+
+def is_recording_playing() -> bool:
+    if _recording_player is None:
+        return False
+
+    return bool(
+        _recording_player.isPlaying()
+    )
+
+
+def play_beep(
+    frequency: float = 880.0,
+    duration: float = 0.14,
+    volume: float = 0.18,
+) -> None:
+    """Play a short cue before opening the microphone stream."""
+    sample_rate = 44_100
+
+    samples = int(
+        sample_rate * duration
+    )
+
+    timeline = (
+        np.arange(samples, dtype=np.float32)
+        / sample_rate
+    )
+
+    tone = (
+        volume
+        * np.sin(
+            2.0
+            * np.pi
+            * frequency
+            * timeline
+        )
+    ).astype(np.float32)
+
+    # Small fade in/out to avoid clicks.
+    fade_samples = min(
+        int(sample_rate * 0.01),
+        samples // 2,
+    )
+
+    if fade_samples > 0:
+        fade = np.linspace(
+            0.0,
+            1.0,
+            fade_samples,
+            dtype=np.float32,
+        )
+
+        tone[:fade_samples] *= fade
+        tone[-fade_samples:] *= fade[::-1]
+
+    sd.play(
+        tone,
+        samplerate=sample_rate,
+        blocking=True,
+    )

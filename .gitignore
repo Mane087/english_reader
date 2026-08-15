@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.py[cod]
+
+# Virtual environment
+.venv/
+
+# PyInstaller output
+dist/
+build/
+
+# Generated audio
+output.mp3
+output.tmp.mp3
+shadowing_recording.wav
+
+# Editor
+.vscode/
+.DS_Store
