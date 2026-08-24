@@ -233,8 +233,5 @@ schools, universities, NGOs and public institutions.
 bundling it into a paid product, running it inside a for-profit company, or
 offering it as a paid or ad-supported service.
 
-Want a commercial license? Contact **documentacion.lynxworxs@gmail.com** — they
-are available and negotiable.
-
 > ⚠️ `phonemizer` and `espeak-ng` are GPL-3.0. See the *Scope* section of
 > [LICENSE.md](LICENSE.md) before redistributing any prebuilt binary.
