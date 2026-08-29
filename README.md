@@ -1,11 +1,11 @@
 # English Reader
 
-A macOS desktop app for practicing English pronunciation. Paste any text, generate
+A desktop app for macOS and Linux for practicing English pronunciation. Paste any text, generate
 natural speech with Microsoft Edge neural voices, follow the word-by-word highlight,
 read the auto-generated IPA guide, and record yourself shadowing the reference audio.
 
 ![Python](https://img.shields.io/badge/python-3.14-blue)
-![Platform](https://img.shields.io/badge/platform-macOS-lightgrey)
+![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey)
 
 ---
 
@@ -79,20 +79,33 @@ attempt is in progress, so they never hijack normal editing.
 
 ## Requirements
 
-- **macOS** — playback uses `AVFoundation` through PyObjC, so the app is macOS-only.
+- **macOS or Linux** — playback goes through PortAudio, so both are supported.
 - **Python 3.14** (any 3.11+ should work; the bundled venv uses 3.14).
 - **espeak-ng** — required by `phonemizer` to produce IPA.
 - **Internet connection** — `edge-tts` synthesizes in the cloud.
-- Microphone permission (for shadowing) and, on first run, macOS will ask for it.
+- **Microphone access** for shadowing. macOS asks for permission on first run; on
+  Linux the default input device must be available to your session.
 
-PortAudio ships inside the `sounddevice` wheel, so no extra audio library is needed.
+System packages per platform:
+
+| Dependency | macOS | Ubuntu |
+|---|---|---|
+| espeak-ng | `brew install espeak-ng` | `sudo apt install espeak-ng` |
+| Tk (for `customtkinter`) | included in the python.org / Homebrew Python | `sudo apt install python3-tk` |
+| PortAudio (for `sounddevice`) | bundled in the wheel | `sudo apt install libportaudio2` |
+| libsndfile (for `soundfile`) | bundled in the wheel | bundled in the wheel |
+
+The `sounddevice` wheels ship PortAudio only for macOS and Windows, which is why
+Ubuntu needs `libportaudio2` explicitly.
 
 ---
 
 ## Installation
 
+**macOS**
+
 ```bash
-# 1. System dependency
+# 1. System dependencies
 brew install espeak-ng
 
 # 2. Clone / enter the project
@@ -106,8 +119,26 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
+**Ubuntu / Debian**
+
+```bash
+# 1. System dependencies
+sudo apt update
+sudo apt install espeak-ng python3-tk python3-venv libportaudio2
+
+# 2. Clone / enter the project
+cd english_reader
+
+# 3. Virtual environment
+python3 -m venv .venv
+source .venv/bin/activate
+
+# 4. Python dependencies
+pip install -r requirements.txt
+```
+
 > `requirements.txt` pins runtime dependencies only. Add `pyinstaller` separately if
-> you plan to build the `.app`.
+> you plan to build a distributable.
 
 ---
 
@@ -133,17 +164,25 @@ you to generate again instead of playing stale audio.
 
 ---
 
-## Building the macOS app
+## Building a distributable
 
-A PyInstaller spec is already committed:
+A PyInstaller spec is already committed and adapts to the host platform:
 
 ```bash
 pip install pyinstaller
 pyinstaller "English Reader.spec"
 ```
 
-Output lands in `dist/English Reader.app`. The spec is windowed (`console=False`) and
-uses `EnglishReader.icns` as the bundle icon.
+| Host | Output | Icon |
+|---|---|---|
+| macOS | `dist/English Reader.app` | `EnglishReader.icns` |
+| Linux | `dist/English Reader/English Reader` | none (PyInstaller rejects `.icns` outside macOS) |
+
+The spec is windowed (`console=False`) on both. PyInstaller builds for the platform
+it runs on, so a Linux build must be produced on Linux.
+
+> The bundled build writes `output.mp3` next to the frozen module, which is
+> read-only inside a `.app`. Running from source is the supported path today.
 
 ---
 
@@ -153,7 +192,8 @@ uses `EnglishReader.icns` as the bundle icon.
 english_reader/
 ├── app.py                     # CustomTkinter UI, playback state machine, shortcuts
 ├── config.py                  # Accent → voice map, speed rates, phonemizer languages
-├── tts_service.py             # edge-tts synthesis, word-boundary alignment, AVAudioPlayer
+├── audio_player.py            # Portable playback (sounddevice + soundfile)
+├── tts_service.py             # edge-tts synthesis, word-boundary alignment, playback API
 ├── recording_service.py       # Microphone capture, WAV I/O, cue beep, playback
 ├── pronunciation_service.py   # IPA, chunking, linking, stress, weak forms, intonation
 ├── requirements.txt           # Pinned runtime dependencies
@@ -201,9 +241,11 @@ All three are listed in `.gitignore`.
 
 | Symptom | Cause / fix |
 |---|---|
-| `RuntimeError: espeak not installed` or empty IPA | `brew install espeak-ng`. |
+| `RuntimeError: espeak not installed` or empty IPA | Install espeak-ng: `brew install espeak-ng` (macOS) or `sudo apt install espeak-ng` (Ubuntu). |
+| `OSError: PortAudio library not found` | Ubuntu only: `sudo apt install libportaudio2`. |
+| `ModuleNotFoundError: No module named 'tkinter'` | Ubuntu only: `sudo apt install python3-tk`. |
 | `No audio was received from edge-tts.` | No internet, or the Edge TTS endpoint rejected the request. Retry. |
-| `No microphone audio was captured.` | Grant microphone permission in *System Settings → Privacy & Security → Microphone*, and check the selected input device. |
+| `No microphone audio was captured.` | macOS: grant permission in *System Settings → Privacy & Security → Microphone*. Linux: check the default input in your sound settings and that no other app holds the device. |
 | Some words are not highlighted | Numbers, symbols and abbreviations are spoken differently than written, so their boundary cannot be mapped. The status bar shows the synchronized ratio. |
 | British IPA fails | `phonemizer` falls back from `en-gb` to `en` automatically; if it still fails, check your espeak-ng voice data. |
 | Shortcuts do nothing | Click outside the text box first — shortcuts are suppressed while editing. |
@@ -212,7 +254,8 @@ All three are listed in `.gitignore`.
 
 ## Notes & limitations
 
-- macOS only. Playback (`AVAudioPlayer`) and the PyObjC dependencies are Apple-specific.
+- Windows is untested. Nothing in the code is macOS- or Linux-specific any more, but
+  it has only been exercised on those two platforms.
 - The Reading Guide is a *study aid*, not a phonetic ground truth. Linking, weak forms
   and intonation vary with speaker, speed, emphasis and context.
 - There is no pronunciation scoring — shadowing is A/B comparison by ear, by design.

@@ -2,8 +2,8 @@ import asyncio
 from pathlib import Path
 
 import edge_tts
-from AVFoundation import AVAudioPlayer
-from Foundation import NSURL
+
+from audio_player import AudioPlayer
 
 
 OUTPUT_FILE = Path(__file__).parent / "output.mp3"
@@ -11,7 +11,7 @@ TEMP_OUTPUT_FILE = Path(__file__).parent / "output.tmp.mp3"
 
 TICKS_PER_SECOND = 10_000_000
 
-_player = None
+_player = AudioPlayer()
 _word_boundaries = []
 
 
@@ -161,116 +161,48 @@ def get_word_boundaries() -> list:
 
 
 def load_audio() -> None:
-    global _player
-
-    if not OUTPUT_FILE.exists():
-        raise FileNotFoundError(
-            f"Audio file not found: {OUTPUT_FILE}"
-        )
-
-    if _player is not None:
-        _player.stop()
-
-    url = NSURL.fileURLWithPath_(str(OUTPUT_FILE))
-
-    player, error = (
-        AVAudioPlayer
-        .alloc()
-        .initWithContentsOfURL_error_(
-            url,
-            None,
-        )
-    )
-
-    if player is None:
-        raise RuntimeError(
-            f"Unable to load audio: {error}"
-        )
-
-    _player = player
-    _player.prepareToPlay()
+    _player.load(OUTPUT_FILE)
 
 
 def play_audio() -> None:
-    if _player is not None:
-        _player.play()
-
-
-def pause_audio() -> None:
-    if _player is not None:
-        _player.pause()
-
-
-def resume_audio() -> None:
-    if _player is not None:
-        _player.play()
-
-
-def stop_audio() -> None:
-    if _player is None:
-        return
-
-    _player.stop()
-    _player.setCurrentTime_(0.0)
-
-
-def replay_audio() -> None:
-    if _player is None:
-        return
-
-    _player.setCurrentTime_(0.0)
     _player.play()
 
 
-def seek_relative(seconds: float) -> None:
-    if _player is None:
-        return
+def pause_audio() -> None:
+    _player.pause()
 
-    seek_to(
-        _player.currentTime() + seconds
-    )
+
+def resume_audio() -> None:
+    _player.resume()
+
+
+def stop_audio() -> None:
+    _player.stop()
+
+
+def replay_audio() -> None:
+    _player.replay()
+
+
+def seek_relative(seconds: float) -> None:
+    _player.seek_relative(seconds)
 
 
 def seek_to(seconds: float) -> None:
-    if _player is None:
-        return
-
-    duration = float(_player.duration())
-
-    position = max(
-        0.0,
-        min(float(seconds), duration),
-    )
-
-    _player.setCurrentTime_(position)
+    _player.seek_to(seconds)
 
 
 def get_current_time() -> float:
-    if _player is None:
-        return 0.0
-
-    return float(_player.currentTime())
+    return _player.current_time()
 
 
 def get_duration() -> float:
-    if _player is None:
-        return 0.0
-
-    return float(_player.duration())
+    return _player.duration()
 
 
 def is_playing() -> bool:
-    if _player is None:
-        return False
-
-    return bool(_player.isPlaying())
+    return _player.is_playing()
 
 
 def unload_audio() -> None:
-    global _player
-
-    if _player is None:
-        return
-
-    _player.stop()
-    _player = None
+    _player.unload()

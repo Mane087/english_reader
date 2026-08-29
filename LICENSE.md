@@ -127,10 +127,11 @@ licenses, and some of them are copyleft:
 | numpy | BSD-3-Clause (and others) |
 | sounddevice | MIT |
 | soundfile | BSD-3-Clause |
-| pyobjc-* | MIT |
+| PortAudio (bundled in the `sounddevice` wheel, or `libportaudio2` on Linux) | MIT |
+| libsndfile (bundled in the `soundfile` wheel) | LGPL-2.1-or-later |
 
 Because `phonemizer` and `espeak-ng` are GPL-3.0, **redistributing a combined
-binary** (for example the PyInstaller `dist/English Reader.app` bundle) would
+binary** (for example the PyInstaller output in `dist/`) would
 trigger GPL-3.0 copyleft on the combined work, and GPL-3.0 section 7 forbids
 adding further restrictions such as the noncommercial condition above. Users
 should therefore install the dependencies themselves from source, as documented

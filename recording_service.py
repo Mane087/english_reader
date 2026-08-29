@@ -4,8 +4,8 @@ from pathlib import Path
 import numpy as np
 import sounddevice as sd
 import soundfile as sf
-from AVFoundation import AVAudioPlayer
-from Foundation import NSURL
+
+from audio_player import AudioPlayer
 
 
 RECORDING_FILE = Path(__file__).parent / "shadowing_recording.wav"
@@ -15,7 +15,7 @@ _recording_frames = []
 _recording_lock = threading.Lock()
 _recording_sample_rate = 44_100
 _recording_active = False
-_recording_player = None
+_recording_player = AudioPlayer()
 
 
 def _recording_callback(indata, frames, time_info, status):
@@ -158,8 +158,6 @@ def get_recording_duration() -> float:
 
 
 def play_recording() -> None:
-    global _recording_player
-
     if not RECORDING_FILE.exists():
         raise FileNotFoundError(
             f"Recording not found: {RECORDING_FILE}"
@@ -167,46 +165,16 @@ def play_recording() -> None:
 
     stop_recording_playback()
 
-    url = NSURL.fileURLWithPath_(
-        str(RECORDING_FILE)
-    )
-
-    player, error = (
-        AVAudioPlayer
-        .alloc()
-        .initWithContentsOfURL_error_(
-            url,
-            None,
-        )
-    )
-
-    if player is None:
-        raise RuntimeError(
-            f"Unable to load recording: {error}"
-        )
-
-    _recording_player = player
-    _recording_player.prepareToPlay()
+    _recording_player.load(RECORDING_FILE)
     _recording_player.play()
 
 
 def stop_recording_playback() -> None:
-    global _recording_player
-
-    if _recording_player is None:
-        return
-
-    _recording_player.stop()
-    _recording_player = None
+    _recording_player.unload()
 
 
 def is_recording_playing() -> bool:
-    if _recording_player is None:
-        return False
-
-    return bool(
-        _recording_player.isPlaying()
-    )
+    return _recording_player.is_playing()
 
 
 def play_beep(

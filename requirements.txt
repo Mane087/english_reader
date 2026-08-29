@@ -1,14 +1,13 @@
-# Runtime dependencies for English Reader (macOS).
+# Runtime dependencies for English Reader (macOS and Linux).
 # Build-only: pip install pyinstaller
 #
-# System dependency (not installable via pip):
-#   brew install espeak-ng
+# System dependencies (not installable via pip):
+#   macOS:  brew install espeak-ng
+#   Ubuntu: sudo apt install espeak-ng python3-tk
 
 customtkinter==6.0.0
 edge-tts==7.2.8
 numpy==2.5.2
 phonemizer==3.4.0
-pyobjc-framework-AVFoundation==12.2.2
-pyobjc-framework-Cocoa==12.2.2
 sounddevice==0.5.5
 soundfile==0.14.0

@@ -1885,8 +1885,9 @@ class EnglishReaderApp(ctk.CTk):
         )
         self.shadowing_info_label.configure(
             text=(
-                "Microphone error. On macOS, verify "
-                "Microphone permission for your terminal or IDE."
+                "Microphone error. On macOS, verify Microphone "
+                "permission for your terminal or IDE. On Linux, verify "
+                "that an input device is available and not in use."
             )
         )
 

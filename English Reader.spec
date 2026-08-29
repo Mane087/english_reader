@@ -1,5 +1,13 @@
 # -*- mode: python ; coding: utf-8 -*-
 
+import sys
+
+
+IS_MACOS = sys.platform == "darwin"
+
+# `.icns` is only accepted by PyInstaller on macOS, and `BUNDLE` only
+# produces a `.app` there. On Linux the build stops at `dist/English Reader/`.
+ICON = ['EnglishReader.icns'] if IS_MACOS else None
 
 a = Analysis(
     ['app.py'],
@@ -32,7 +40,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=['EnglishReader.icns'],
+    icon=ICON,
 )
 coll = COLLECT(
     exe,
@@ -43,9 +51,11 @@ coll = COLLECT(
     upx_exclude=[],
     name='English Reader',
 )
-app = BUNDLE(
-    coll,
-    name='English Reader.app',
-    icon='EnglishReader.icns',
-    bundle_identifier=None,
-)
+
+if IS_MACOS:
+    app = BUNDLE(
+        coll,
+        name='English Reader.app',
+        icon='EnglishReader.icns',
+        bundle_identifier=None,
+    )
