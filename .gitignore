@@ -9,10 +9,8 @@ __pycache__/
 dist/
 build/
 
-# Generated audio
-output.mp3
-output.tmp.mp3
-shadowing_recording.wav
+# Packaging
+*.egg-info/
 
 # Editor
 .vscode/

@@ -4,7 +4,7 @@ A desktop app for macOS and Linux for practicing English pronunciation. Paste an
 natural speech with Microsoft Edge neural voices, follow the word-by-word highlight,
 read the auto-generated IPA guide, and record yourself shadowing the reference audio.
 
-![Python](https://img.shields.io/badge/python-3.14-blue)
+![Python](https://img.shields.io/badge/python-3.11%2B-blue)
 ![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey)
 
 ---
@@ -80,7 +80,7 @@ attempt is in progress, so they never hijack normal editing.
 ## Requirements
 
 - **macOS or Linux** — playback goes through PortAudio, so both are supported.
-- **Python 3.14** (any 3.11+ should work; the bundled venv uses 3.14).
+- **Python 3.11+** (declared as `requires-python` in `pyproject.toml`).
 - **espeak-ng** — required by `phonemizer` to produce IPA.
 - **Internet connection** — `edge-tts` synthesizes in the cloud.
 - **Microphone access** for shadowing. macOS asks for permission on first run; on
@@ -115,8 +115,8 @@ cd english_reader
 python3 -m venv .venv
 source .venv/bin/activate
 
-# 4. Python dependencies
-pip install -r requirements.txt
+# 4. Install the project
+pip install -e .
 ```
 
 **Ubuntu / Debian**
@@ -133,12 +133,17 @@ cd english_reader
 python3 -m venv .venv
 source .venv/bin/activate
 
-# 4. Python dependencies
-pip install -r requirements.txt
+# 4. Install the project
+pip install -e .
 ```
 
-> `requirements.txt` pins runtime dependencies only. Add `pyinstaller` separately if
-> you plan to build a distributable.
+`pip install -e .` installs the `english_reader` package in editable mode — your edits
+to `src/` take effect immediately, no reinstall needed. It also creates the
+`english-reader` command inside the virtualenv.
+
+> `pyproject.toml` holds the project metadata and the canonical dependency list;
+> `requirements.txt` mirrors that list and is kept for tooling that expects it. Update
+> both together. For a build: `pip install -e ".[build]"` pulls in PyInstaller.
 
 ---
 
@@ -146,8 +151,11 @@ pip install -r requirements.txt
 
 ```bash
 source .venv/bin/activate
-python app.py
+english-reader
 ```
+
+`python -m english_reader` does the same thing and is handy when you have not
+activated the virtualenv (`.venv/bin/python -m english_reader`).
 
 Then:
 
@@ -175,45 +183,62 @@ pyinstaller "English Reader.spec"
 
 | Host | Output | Icon |
 |---|---|---|
-| macOS | `dist/English Reader.app` | `EnglishReader.icns` |
+| macOS | `dist/English Reader.app` | `assets/EnglishReader.icns` |
 | Linux | `dist/English Reader/English Reader` | none (PyInstaller rejects `.icns` outside macOS) |
 
 The spec is windowed (`console=False`) on both. PyInstaller builds for the platform
 it runs on, so a Linux build must be produced on Linux.
 
-> The bundled build writes `output.mp3` next to the frozen module, which is
-> read-only inside a `.app`. Running from source is the supported path today.
+Generated audio goes to the per-user data directory rather than next to the frozen
+modules, so a read-only bundle is no longer a problem.
 
 ---
 
 ## Project structure
 
+The project uses the standard `src` layout: the importable package lives under
+`src/`, static files under `assets/`, and everything the app generates at runtime
+stays out of the repository entirely.
+
 ```
 english_reader/
-├── app.py                     # CustomTkinter UI, playback state machine, shortcuts
-├── config.py                  # Accent → voice map, speed rates, phonemizer languages
-├── audio_player.py            # Portable playback (sounddevice + soundfile)
-├── tts_service.py             # edge-tts synthesis, word-boundary alignment, playback API
-├── recording_service.py       # Microphone capture, WAV I/O, cue beep, playback
-├── pronunciation_service.py   # IPA, chunking, linking, stress, weak forms, intonation
-├── requirements.txt           # Pinned runtime dependencies
-├── LICENSE.md                 # PolyForm Noncommercial 1.0.0
-├── English Reader.spec        # PyInstaller bundle definition
-├── EnglishReader.icns         # App icon
-└── output.mp3                 # Generated audio (regenerated on every run)
+├── src/
+│   └── english_reader/
+│       ├── __init__.py             # Package version
+│       ├── __main__.py             # `python -m english_reader`
+│       ├── app.py                  # CustomTkinter UI, playback state machine, shortcuts
+│       ├── config.py               # Accent → voice map, speed rates, phonemizer languages
+│       ├── paths.py                # Per-user data directory for generated audio
+│       ├── audio_player.py         # Portable playback (sounddevice + soundfile)
+│       ├── tts_service.py          # edge-tts synthesis, word-boundary alignment, playback API
+│       ├── recording_service.py    # Microphone capture, WAV I/O, cue beep, playback
+│       └── pronunciation_service.py  # IPA, chunking, linking, stress, weak forms, intonation
+├── assets/
+│   └── EnglishReader.icns          # App icon (used by the macOS bundle)
+├── pyproject.toml                  # Metadata, dependencies, entry point, tool config
+├── requirements.txt                # Pinned runtime dependencies (mirrors pyproject.toml)
+├── English Reader.spec             # PyInstaller definition (macOS bundle / Linux dir)
+├── LICENSE.md                      # PolyForm Noncommercial 1.0.0
+└── README.md
 ```
+
+The package is flat on purpose: six modules with distinct responsibilities do not need
+subpackages. `app.py` is the exception — at ~2900 lines it is by far the largest module
+and the natural next thing to split, but that is a separate change.
 
 ### How the pieces fit
 
 ```
 app.py  ──►  tts_service.generate_audio_sync()   ──►  output.mp3 + word boundaries
    │                        │
-   │                        └──►  align_word_boundaries()  (spoken word → char offset)
+   │                        ├──►  align_word_boundaries()  (spoken word → char offset)
+   │                        └──►  audio_player.AudioPlayer  (playback + seek)
    │
    ├──►  pronunciation_service.generate_reading_guide(text, boundaries, accent)
    │              └── espeak IPA + timing-derived pauses/chunks
    │
    └──►  recording_service  (shadowing capture + comparison playback)
+                            └──►  audio_player.AudioPlayer
 ```
 
 `tts_service` requests `WordBoundary` events from `edge-tts` and maps each spoken word
@@ -221,11 +246,44 @@ back to a character range in the original text. That mapping is what powers the
 highlight, the click-to-play, the single-word repeat, and the pause detection in the
 Reading Guide.
 
+### Audio playback
+
+Playback is isolated in `audio_player.py` behind a single `AudioPlayer` class, used by
+both `tts_service` (reference audio) and `recording_service` (your shadowing take).
+`app.py` never touches it directly — it calls the module-level functions those two
+services expose.
+
+`AudioPlayer` decodes the whole file into memory with `soundfile` and feeds it to a
+`sounddevice` output stream, keeping a frame cursor so it can pause, resume and seek.
+Both libraries sit on portable C libraries (libsndfile and PortAudio), which is what
+makes the same code run on macOS and Linux.
+
+Three details are worth knowing before changing that file:
+
+- **Reported positions subtract the stream latency.** The callback fills the device
+  buffer ahead of what the speakers are playing, so the raw cursor runs early. Without
+  the correction the karaoke highlight would lead the audio by roughly 50–100 ms.
+- **`pause()` rewinds the cursor by that same latency**, because aborting the stream
+  discards frames that were queued but never heard.
+- **A finished stream must be stopped before it can start again.** PortAudio refuses to
+  start a stream that is not stopped, which is exactly the state left behind when
+  playback reaches the end of the buffer.
+
+> Earlier versions used `AVAudioPlayer` through PyObjC, which made the app macOS-only.
+> That backend and the `pyobjc-*` dependencies are gone; there is now one playback
+> implementation for both platforms.
+
 ---
 
 ## Generated files
 
-These are written next to the source and are safe to delete:
+These live in the per-user data directory, outside the repository, and are safe to
+delete at any time:
+
+| Platform | Location |
+|---|---|
+| Linux | `$XDG_DATA_HOME/english-reader/` or `~/.local/share/english-reader/` |
+| macOS | `~/Library/Application Support/english-reader/` |
 
 | File | Purpose |
 |---|---|
@@ -233,7 +291,9 @@ These are written next to the source and are safe to delete:
 | `output.tmp.mp3` | Partial download; removed automatically on failure. |
 | `shadowing_recording.wav` | Your last shadowing take (mono, PCM 16-bit). |
 
-All three are listed in `.gitignore`.
+`english_reader/paths.py` resolves the directory and creates it on first use. Keeping
+these out of the source tree is what lets the app run from an installed package or a
+read-only bundle.
 
 ---
 

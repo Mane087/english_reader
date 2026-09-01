@@ -1,14 +1,14 @@
 import threading
-from pathlib import Path
 
 import numpy as np
 import sounddevice as sd
 import soundfile as sf
 
-from audio_player import AudioPlayer
+from .audio_player import AudioPlayer
+from .paths import data_file
 
 
-RECORDING_FILE = Path(__file__).parent / "shadowing_recording.wav"
+RECORDING_FILE = data_file("shadowing_recording.wav")
 
 _recording_stream = None
 _recording_frames = []

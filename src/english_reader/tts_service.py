@@ -1,13 +1,13 @@
 import asyncio
-from pathlib import Path
 
 import edge_tts
 
-from audio_player import AudioPlayer
+from .audio_player import AudioPlayer
+from .paths import data_file
 
 
-OUTPUT_FILE = Path(__file__).parent / "output.mp3"
-TEMP_OUTPUT_FILE = Path(__file__).parent / "output.tmp.mp3"
+OUTPUT_FILE = data_file("output.mp3")
+TEMP_OUTPUT_FILE = data_file("output.tmp.mp3")
 
 TICKS_PER_SECOND = 10_000_000
 

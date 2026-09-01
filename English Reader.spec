@@ -7,11 +7,12 @@ IS_MACOS = sys.platform == "darwin"
 
 # `.icns` is only accepted by PyInstaller on macOS, and `BUNDLE` only
 # produces a `.app` there. On Linux the build stops at `dist/English Reader/`.
-ICON = ['EnglishReader.icns'] if IS_MACOS else None
+ICON_FILE = 'assets/EnglishReader.icns'
+ICON = [ICON_FILE] if IS_MACOS else None
 
 a = Analysis(
-    ['app.py'],
-    pathex=[],
+    ['src/english_reader/__main__.py'],
+    pathex=['src'],
     binaries=[],
     datas=[],
     hiddenimports=[],
@@ -56,6 +57,6 @@ if IS_MACOS:
     app = BUNDLE(
         coll,
         name='English Reader.app',
-        icon='EnglishReader.icns',
+        icon=ICON_FILE,
         bundle_identifier=None,
     )

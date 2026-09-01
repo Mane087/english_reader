@@ -1,9 +1,12 @@
 # Runtime dependencies for English Reader (macOS and Linux).
+#
+# Mirrors the `dependencies` array in pyproject.toml — update both together.
 # Build-only: pip install pyinstaller
 #
 # System dependencies (not installable via pip):
 #   macOS:  brew install espeak-ng
-#   Ubuntu: sudo apt install espeak-ng python3-tk
+#   Ubuntu: sudo apt install espeak-ng python3-tk libportaudio2
+#           (the sounddevice wheel bundles PortAudio only on macOS/Windows)
 
 customtkinter==6.0.0
 edge-tts==7.2.8
