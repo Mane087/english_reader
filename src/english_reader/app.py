@@ -5,9 +5,9 @@ from bisect import bisect_right
 
 import customtkinter as ctk
 
-from config import ACCENTS, SPEEDS
-from pronunciation_service import generate_reading_guide
-from recording_service import (
+from .config import ACCENTS, SPEEDS
+from .pronunciation_service import generate_reading_guide
+from .recording_service import (
     cancel_recording,
     clear_recording,
     get_recording_duration,
@@ -20,7 +20,7 @@ from recording_service import (
     stop_recording,
     stop_recording_playback,
 )
-from tts_service import (
+from .tts_service import (
     generate_audio_sync,
     get_current_time,
     get_duration,
@@ -1885,8 +1885,9 @@ class EnglishReaderApp(ctk.CTk):
         )
         self.shadowing_info_label.configure(
             text=(
-                "Microphone error. On macOS, verify "
-                "Microphone permission for your terminal or IDE."
+                "Microphone error. On macOS, verify Microphone "
+                "permission for your terminal or IDE. On Linux, verify "
+                "that an input device is available and not in use."
             )
         )
 
@@ -2869,7 +2870,7 @@ class EnglishReaderApp(ctk.CTk):
         self.destroy()
 
 
-if __name__ == "__main__":
+def main():
     app = EnglishReaderApp()
 
     app.protocol(
@@ -2878,3 +2879,4 @@ if __name__ == "__main__":
     )
 
     app.mainloop()
+

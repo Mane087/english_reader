@@ -3,7 +3,7 @@ import re
 from phonemizer import phonemize
 from phonemizer.separator import Separator
 
-from config import PHONEMIZER_LANGUAGES
+from .config import PHONEMIZER_LANGUAGES
 
 
 WORD_PATTERN = re.compile(
