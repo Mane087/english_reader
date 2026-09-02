@@ -15,3 +15,7 @@ build/
 # Editor
 .vscode/
 .DS_Store
+
+output.mp3
+output.tmp.mp3
+shadowing_recording.wav
