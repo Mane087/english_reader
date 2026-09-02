@@ -2,10 +2,12 @@ import sys
 import threading
 import time
 from bisect import bisect_right
+from tkinter import filedialog
 
 import customtkinter as ctk
 
 from .config import ACCENTS, SPEEDS
+from .pdf_service import PdfDocument, PdfError
 from .pronunciation_service import generate_reading_guide
 from .recording_service import (
     cancel_recording,
@@ -191,6 +193,10 @@ class EnglishReaderApp(ctk.CTk):
         self.word_repeat_current = 0
         self.word_repeat_total = WORD_REPEAT_COUNT
 
+        # PDF source state
+        self.pdf_document = None
+        self.pdf_page_index = 0
+
         # Shadowing state
         self.shadowing_state = "idle"
         self.shadowing_job = None
@@ -215,6 +221,75 @@ class EnglishReaderApp(ctk.CTk):
         )
         self.title_label.pack(
             pady=(24, 14)
+        )
+
+        # -----------------------------------------------------
+        # PDF source
+        #
+        # The document stays open so pages can be pulled one at a
+        # time; each page replaces the text in the textbox.
+        # -----------------------------------------------------
+        self.pdf_frame = ctk.CTkFrame(
+            self,
+            fg_color="transparent",
+        )
+        self.pdf_frame.pack(
+            pady=(0, 12)
+        )
+
+        self.pdf_open_button = ctk.CTkButton(
+            self.pdf_frame,
+            text="📄 Open PDF",
+            width=130,
+            command=self.on_open_pdf,
+        )
+        self.pdf_open_button.grid(
+            row=0,
+            column=0,
+            padx=(0, 14),
+        )
+
+        self.pdf_previous_button = ctk.CTkButton(
+            self.pdf_frame,
+            text="◀",
+            width=44,
+            command=self.on_previous_page,
+            state="disabled",
+        )
+        self.pdf_previous_button.grid(
+            row=0,
+            column=1,
+            padx=(0, 8),
+        )
+
+        self.pdf_page_label = ctk.CTkLabel(
+            self.pdf_frame,
+            text="No PDF loaded",
+            width=140,
+            font=ctk.CTkFont(
+                size=13,
+            ),
+            text_color=(
+                "gray45",
+                "gray65",
+            ),
+        )
+        self.pdf_page_label.grid(
+            row=0,
+            column=2,
+        )
+
+        self.pdf_next_button = ctk.CTkButton(
+            self.pdf_frame,
+            text="▶",
+            width=44,
+            command=self.on_next_page,
+            state="disabled",
+        )
+        self.pdf_next_button.grid(
+            row=0,
+            column=3,
+            padx=(8, 0),
         )
 
         # -----------------------------------------------------
@@ -699,6 +774,156 @@ class EnglishReaderApp(ctk.CTk):
         )
         self.status_label.pack(
             pady=(12, 16)
+        )
+
+    # =========================================================
+    # PDF source
+    # =========================================================
+    def on_open_pdf(self):
+        path = filedialog.askopenfilename(
+            title="Open PDF",
+            filetypes=[
+                ("PDF files", "*.pdf"),
+            ],
+        )
+
+        if not path:
+            return
+
+        try:
+            document = PdfDocument.open(
+                path
+            )
+        except PdfError as error:
+            self.status_label.configure(
+                text=f"PDF error: {error}"
+            )
+            return
+
+        if self.pdf_document is not None:
+            self.pdf_document.close()
+
+        self.pdf_document = document
+
+        self.load_pdf_page(0)
+
+    def on_previous_page(self):
+        if self.pdf_document is None:
+            return
+
+        self.load_pdf_page(
+            self.pdf_page_index - 1
+        )
+
+    def on_next_page(self):
+        if self.pdf_document is None:
+            return
+
+        self.load_pdf_page(
+            self.pdf_page_index + 1
+        )
+
+    def load_pdf_page(
+        self,
+        index: int,
+    ):
+        try:
+            text = self.pdf_document.text_for_page(
+                index
+            )
+        except PdfError as error:
+            self.status_label.configure(
+                text=f"PDF error: {error}"
+            )
+            return
+
+        self.pdf_page_index = index
+
+        self.replace_text(text)
+        self.update_pdf_controls()
+
+        page_number = index + 1
+        page_count = self.pdf_document.page_count
+
+        if text.strip():
+            self.status_label.configure(
+                text=(
+                    f"Loaded page {page_number} "
+                    f"of {page_count}."
+                )
+            )
+        else:
+            self.status_label.configure(
+                text=(
+                    f"Page {page_number} has no selectable "
+                    "text — it is probably a scanned image."
+                )
+            )
+
+    def replace_text(
+        self,
+        text: str,
+    ):
+        """Replace the textbox content with a PDF page.
+
+        The generated audio is invalidated here instead of leaving it to
+        the `<<Modified>>` handler, which Tk runs later in the event
+        loop and would overwrite the status message of the caller.
+        """
+        if self.audio_loaded:
+            self.invalidate_generated_audio(
+                message=(
+                    "Text changed — "
+                    "generate audio again."
+                )
+            )
+
+        self.textbox.delete(
+            "1.0",
+            "end",
+        )
+        self.textbox.insert(
+            "1.0",
+            text,
+        )
+        self.textbox.edit_modified(
+            False
+        )
+
+    def update_pdf_controls(self):
+        if self.pdf_document is None:
+            self.pdf_page_label.configure(
+                text="No PDF loaded"
+            )
+            self.pdf_previous_button.configure(
+                state="disabled"
+            )
+            self.pdf_next_button.configure(
+                state="disabled"
+            )
+            return
+
+        page_count = self.pdf_document.page_count
+
+        self.pdf_page_label.configure(
+            text=(
+                f"Page {self.pdf_page_index + 1} "
+                f"/ {page_count}"
+            )
+        )
+        self.pdf_previous_button.configure(
+            state=(
+                "normal"
+                if self.pdf_page_index > 0
+                else "disabled"
+            )
+        )
+        self.pdf_next_button.configure(
+            state=(
+                "normal"
+                if self.pdf_page_index < page_count - 1
+                else "disabled"
+            )
         )
 
     # =========================================================
@@ -1839,6 +2064,19 @@ class EnglishReaderApp(ctk.CTk):
         self.textbox.configure(
             state=state
         )
+        self.pdf_open_button.configure(
+            state=state
+        )
+
+        if enabled:
+            self.update_pdf_controls()
+        else:
+            self.pdf_previous_button.configure(
+                state="disabled"
+            )
+            self.pdf_next_button.configure(
+                state="disabled"
+            )
 
         if enabled and self.audio_loaded:
             self.enable_media_buttons()
@@ -2866,6 +3104,10 @@ class EnglishReaderApp(ctk.CTk):
 
         if self.audio_loaded:
             unload_audio()
+
+        if self.pdf_document is not None:
+            self.pdf_document.close()
+            self.pdf_document = None
 
         self.destroy()
 

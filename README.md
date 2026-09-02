@@ -25,6 +25,13 @@ timings returned by the TTS engine, so the guide matches the audio you just hear
 
 ## Features
 
+### PDF source
+- **📄 Open PDF** loads a document and drops the text of one page into the editor.
+- **◀ / ▶** move to the previous or next page; the page counter shows where you are.
+- Line breaks and hyphenated words split across lines are rejoined into paragraphs,
+  so the sentence-level features (TTS, Reading Guide) work on clean text.
+- The text stays editable: trim headers, footers or page numbers before generating audio.
+
 ### Speech generation
 - Neural voices via `edge-tts` (no API key required, needs internet).
 - **Accent**: American / British.
@@ -209,6 +216,7 @@ english_reader/
 │       ├── app.py                  # CustomTkinter UI, playback state machine, shortcuts
 │       ├── config.py               # Accent → voice map, speed rates, phonemizer languages
 │       ├── paths.py                # Per-user data directory for generated audio
+│       ├── pdf_service.py          # PDF loading and per-page text extraction
 │       ├── audio_player.py         # Portable playback (sounddevice + soundfile)
 │       ├── tts_service.py          # edge-tts synthesis, word-boundary alignment, playback API
 │       ├── recording_service.py    # Microphone capture, WAV I/O, cue beep, playback
@@ -222,14 +230,16 @@ english_reader/
 └── README.md
 ```
 
-The package is flat on purpose: six modules with distinct responsibilities do not need
+The package is flat on purpose: seven modules with distinct responsibilities do not need
 subpackages. `app.py` is the exception — at ~2900 lines it is by far the largest module
 and the natural next thing to split, but that is a separate change.
 
 ### How the pieces fit
 
 ```
-app.py  ──►  tts_service.generate_audio_sync()   ──►  output.mp3 + word boundaries
+app.py  ──►  pdf_service.PdfDocument  (open once, one page of text per request)
+   │
+   ├──►  tts_service.generate_audio_sync()   ──►  output.mp3 + word boundaries
    │                        │
    │                        ├──►  align_word_boundaries()  (spoken word → char offset)
    │                        └──►  audio_player.AudioPlayer  (playback + seek)
@@ -319,6 +329,8 @@ read-only bundle.
 - The Reading Guide is a *study aid*, not a phonetic ground truth. Linking, weak forms
   and intonation vary with speaker, speed, emphasis and context.
 - There is no pronunciation scoring — shadowing is A/B comparison by ear, by design.
+- Scanned PDFs (images without a text layer) yield nothing: the app reports the empty
+  page instead of running OCR.
 - `edge-tts` is an unofficial client for Microsoft Edge's read-aloud service.
 
 ---
