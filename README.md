@@ -26,7 +26,7 @@ timings returned by the TTS engine, so the guide matches the audio you just hear
 ## Features
 
 ### PDF source
-- **📄 Open PDF** loads a document and drops the text of one page into the editor.
+- **Open PDF** loads a document and drops the text of one page into the editor.
 - **◀ / ▶** move to the previous or next page; the page counter shows where you are.
 - Line breaks and hyphenated words split across lines are rejoined into paragraphs,
   so the sentence-level features (TTS, Reading Guide) work on clean text.
@@ -59,7 +59,7 @@ A collapsible panel rendered next to the text:
 | `LEGEND` | Symbol reference. |
 
 ### Shadowing practice
-1. Press **🎙 Shadowing** → 3-second countdown, then a cue beep.
+1. Press **● Record** → 3-second countdown, then a cue beep.
 2. Record yourself reading the full text (live timer, press again to stop).
 3. The app automatically plays **your recording**, pauses, then plays the **reference**.
 4. Replay either side on demand with **▶ Mine** / **▶ Reference**, or **↻ Retry**.

@@ -2,10 +2,12 @@ import sys
 import threading
 import time
 from bisect import bisect_right
+from pathlib import Path
 from tkinter import filedialog
 
 import customtkinter as ctk
 
+from . import theme
 from .config import ACCENTS, SPEEDS
 from .pdf_service import PdfDocument, PdfError
 from .pronunciation_service import generate_reading_guide
@@ -39,7 +41,7 @@ from .tts_service import (
 )
 
 
-ctk.set_appearance_mode("system")
+ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("blue")
 
 
@@ -82,10 +84,13 @@ class CollapsibleGuideSection(ctk.CTkFrame):
             self,
             text="",
             anchor="w",
-            height=36,
-            corner_radius=8,
+            height=34,
+            corner_radius=theme.RADIUS_CONTROL,
+            fg_color=theme.SURFACE_INSET,
+            hover_color=theme.BORDER_STRONG,
+            text_color=theme.TEXT,
             font=ctk.CTkFont(
-                size=15,
+                size=theme.FONT_SMALL,
                 weight="bold",
             ),
             command=self.toggle,
@@ -142,17 +147,19 @@ class CollapsibleGuideSection(ctk.CTkFrame):
         size: int = 14,
         weight: str = "normal",
         pady=(0, 8),
+        text_color: str = theme.TEXT,
     ):
         label = ctk.CTkLabel(
             self.content_frame,
             text=text,
             anchor="nw",
             justify="left",
-            wraplength=500,
+            wraplength=470,
             font=ctk.CTkFont(
                 size=size,
                 weight=weight,
             ),
+            text_color=text_color,
         )
         label.pack(
             fill="x",
@@ -211,165 +218,430 @@ class EnglishReaderApp(ctk.CTk):
     # UI
     # =========================================================
     def create_widgets(self):
-        self.title_label = ctk.CTkLabel(
-            self,
-            text="English Reader",
+        """Build the window as four horizontal bands.
+
+        Top bar, reading area, control bar and status bar. Everything
+        the user can tune lives in the control bar, so the reading area
+        keeps every pixel that is left over when the window grows.
+        """
+        self.configure(
+            fg_color=theme.WINDOW,
+        )
+
+        self.grid_columnconfigure(
+            0,
+            weight=1,
+        )
+        self.grid_rowconfigure(
+            2,
+            weight=1,
+        )
+
+        self.create_top_bar(row=0)
+        self.create_separator(row=1)
+        self.create_reading_area(row=2)
+        self.create_control_bar(row=3)
+        self.create_separator(row=4)
+        self.create_status_bar(row=5)
+
+    # ---------------------------------------------------------
+    # UI building blocks
+    # ---------------------------------------------------------
+    def create_separator(
+        self,
+        row: int,
+        master=None,
+        columnspan: int = 1,
+        padx=0,
+        pady=0,
+    ):
+        """A one pixel rule.
+
+        CustomTkinter frames cannot draw a single-sided border, so the
+        hairlines under the top bar and inside the control card are
+        frames one pixel tall.
+        """
+        parent = self if master is None else master
+
+        separator = ctk.CTkFrame(
+            parent,
+            height=1,
+            corner_radius=0,
+            fg_color=theme.BORDER,
+        )
+        separator.grid(
+            row=row,
+            column=0,
+            columnspan=columnspan,
+            padx=padx,
+            pady=pady,
+            sticky="ew",
+        )
+
+        return separator
+
+    def create_card(
+        self,
+        master,
+    ) -> ctk.CTkFrame:
+        return ctk.CTkFrame(
+            master,
+            fg_color=theme.SURFACE,
+            corner_radius=theme.RADIUS_CARD,
+            border_width=1,
+            border_color=theme.BORDER,
+        )
+
+    def create_card_header(
+        self,
+        card,
+        text: str,
+    ) -> ctk.CTkLabel:
+        label = ctk.CTkLabel(
+            card,
+            text=text,
+            anchor="w",
+            height=40,
             font=ctk.CTkFont(
-                size=28,
+                size=theme.FONT_LABEL,
+                weight="bold",
+            ),
+            text_color=theme.TEXT_MUTED,
+        )
+        label.grid(
+            row=0,
+            column=0,
+            padx=18,
+            sticky="ew",
+        )
+
+        self.create_separator(
+            row=1,
+            master=card,
+        )
+
+        return label
+
+    def create_section_label(
+        self,
+        master,
+        text: str,
+    ) -> ctk.CTkLabel:
+        return ctk.CTkLabel(
+            master,
+            text=text,
+            anchor="w",
+            font=ctk.CTkFont(
+                size=theme.FONT_LABEL,
+                weight="bold",
+            ),
+            text_color=theme.TEXT_MUTED,
+        )
+
+    def create_media_button(
+        self,
+        master,
+        text: str,
+        command,
+    ) -> ctk.CTkButton:
+        return ctk.CTkButton(
+            master,
+            text=text,
+            command=command,
+            state="disabled",
+            width=104,
+            height=theme.HEIGHT_CONTROL,
+            corner_radius=theme.RADIUS_CONTROL,
+            border_width=1,
+            border_color=theme.BORDER_STRONG,
+            fg_color=theme.SURFACE_INSET,
+            hover_color=theme.BORDER_STRONG,
+            text_color=theme.TEXT,
+            text_color_disabled=theme.TEXT_DISABLED,
+            font=ctk.CTkFont(
+                size=theme.FONT_CONTROL,
+            ),
+        )
+
+    def create_segmented_button(
+        self,
+        master,
+        values: list,
+    ) -> ctk.CTkSegmentedButton:
+        return ctk.CTkSegmentedButton(
+            master,
+            values=values,
+            command=self.on_configuration_changed,
+            height=theme.HEIGHT_SEGMENT,
+            corner_radius=theme.RADIUS_CONTROL,
+            border_width=3,
+            fg_color=theme.SURFACE_SUNKEN,
+            selected_color=theme.SURFACE_SELECTED,
+            selected_hover_color=(
+                theme.SURFACE_SELECTED_HOVER
+            ),
+            unselected_color=theme.SURFACE_SUNKEN,
+            unselected_hover_color=theme.SURFACE_INSET,
+            text_color=theme.TEXT,
+            text_color_disabled=theme.TEXT_DISABLED,
+            font=ctk.CTkFont(
+                size=theme.FONT_CONTROL,
+            ),
+        )
+
+    # ---------------------------------------------------------
+    # Top bar
+    # ---------------------------------------------------------
+    def create_top_bar(
+        self,
+        row: int,
+    ):
+        bar = ctk.CTkFrame(
+            self,
+            height=theme.HEIGHT_TOPBAR,
+            fg_color="transparent",
+        )
+        bar.grid(
+            row=row,
+            column=0,
+            sticky="ew",
+        )
+        bar.grid_propagate(False)
+        bar.grid_rowconfigure(
+            0,
+            weight=1,
+        )
+        bar.grid_columnconfigure(
+            2,
+            weight=1,
+        )
+
+        self.brand_mark = ctk.CTkLabel(
+            bar,
+            text="ER",
+            width=26,
+            height=26,
+            corner_radius=7,
+            fg_color=theme.ACCENT,
+            text_color=theme.ON_ACCENT,
+            font=ctk.CTkFont(
+                size=theme.FONT_LABEL,
                 weight="bold",
             ),
         )
-        self.title_label.pack(
-            pady=(24, 14)
-        )
-
-        # -----------------------------------------------------
-        # PDF source
-        #
-        # The document stays open so pages can be pulled one at a
-        # time; each page replaces the text in the textbox.
-        # -----------------------------------------------------
-        self.pdf_frame = ctk.CTkFrame(
-            self,
-            fg_color="transparent",
-        )
-        self.pdf_frame.pack(
-            pady=(0, 12)
-        )
-
-        self.pdf_open_button = ctk.CTkButton(
-            self.pdf_frame,
-            text="📄 Open PDF",
-            width=130,
-            command=self.on_open_pdf,
-        )
-        self.pdf_open_button.grid(
+        self.brand_mark.grid(
             row=0,
             column=0,
-            padx=(0, 14),
+            padx=(theme.PAD_WINDOW, 10),
+        )
+
+        self.title_label = ctk.CTkLabel(
+            bar,
+            text="English Reader",
+            font=ctk.CTkFont(
+                size=theme.FONT_TITLE,
+                weight="bold",
+            ),
+            text_color=theme.TEXT,
+        )
+        self.title_label.grid(
+            row=0,
+            column=1,
+        )
+
+        self.pdf_file_label = ctk.CTkLabel(
+            bar,
+            text="",
+            anchor="e",
+            font=ctk.CTkFont(
+                size=theme.FONT_SMALL,
+            ),
+            text_color=theme.TEXT_MUTED,
+        )
+        self.pdf_file_label.grid(
+            row=0,
+            column=2,
+            padx=(20, 14),
+            sticky="e",
+        )
+
+        page_frame = ctk.CTkFrame(
+            bar,
+            fg_color=theme.SURFACE,
+            corner_radius=9,
+            border_width=1,
+            border_color=theme.BORDER,
+        )
+        page_frame.grid(
+            row=0,
+            column=3,
+            padx=(0, 10),
         )
 
         self.pdf_previous_button = ctk.CTkButton(
-            self.pdf_frame,
+            page_frame,
             text="◀",
-            width=44,
+            width=30,
+            height=26,
+            corner_radius=theme.RADIUS_SMALL,
+            fg_color=theme.SURFACE_INSET,
+            hover_color=theme.BORDER_STRONG,
+            text_color=theme.TEXT,
+            text_color_disabled=theme.TEXT_DISABLED,
+            font=ctk.CTkFont(
+                size=theme.FONT_SMALL,
+            ),
             command=self.on_previous_page,
             state="disabled",
         )
         self.pdf_previous_button.grid(
             row=0,
-            column=1,
-            padx=(0, 8),
+            column=0,
+            padx=(3, 0),
+            pady=3,
         )
 
         self.pdf_page_label = ctk.CTkLabel(
-            self.pdf_frame,
+            page_frame,
             text="No PDF loaded",
-            width=140,
+            width=104,
             font=ctk.CTkFont(
-                size=13,
+                size=theme.FONT_SMALL,
             ),
-            text_color=(
-                "gray45",
-                "gray65",
-            ),
+            text_color=theme.TEXT_SECONDARY,
         )
         self.pdf_page_label.grid(
             row=0,
-            column=2,
+            column=1,
         )
 
         self.pdf_next_button = ctk.CTkButton(
-            self.pdf_frame,
+            page_frame,
             text="▶",
-            width=44,
+            width=30,
+            height=26,
+            corner_radius=theme.RADIUS_SMALL,
+            fg_color=theme.SURFACE_INSET,
+            hover_color=theme.BORDER_STRONG,
+            text_color=theme.TEXT,
+            text_color_disabled=theme.TEXT_DISABLED,
+            font=ctk.CTkFont(
+                size=theme.FONT_SMALL,
+            ),
             command=self.on_next_page,
             state="disabled",
         )
         self.pdf_next_button.grid(
             row=0,
-            column=3,
-            padx=(8, 0),
+            column=2,
+            padx=(0, 3),
+            pady=3,
         )
 
-        # -----------------------------------------------------
-        # Two-column reading area
-        # -----------------------------------------------------
-        self.content_frame = ctk.CTkFrame(
+        self.pdf_open_button = ctk.CTkButton(
+            bar,
+            text="Open PDF",
+            width=104,
+            height=32,
+            corner_radius=theme.RADIUS_CONTROL,
+            fg_color="transparent",
+            border_width=1,
+            border_color=theme.BORDER_STRONG,
+            hover_color=theme.SURFACE_INSET,
+            text_color=theme.TEXT_SECONDARY,
+            font=ctk.CTkFont(
+                size=theme.FONT_CONTROL,
+            ),
+            command=self.on_open_pdf,
+        )
+        self.pdf_open_button.grid(
+            row=0,
+            column=4,
+            padx=(0, theme.PAD_WINDOW),
+        )
+
+    # ---------------------------------------------------------
+    # Reading area
+    # ---------------------------------------------------------
+    def create_reading_area(
+        self,
+        row: int,
+    ):
+        content = ctk.CTkFrame(
             self,
             fg_color="transparent",
         )
-        self.content_frame.pack(
-            padx=32,
-            fill="both",
-            expand=True,
+        content.grid(
+            row=row,
+            column=0,
+            padx=theme.PAD_WINDOW,
+            pady=theme.GAP,
+            sticky="nsew",
         )
-
-        self.content_frame.grid_columnconfigure(
+        content.grid_columnconfigure(
             (0, 1),
             weight=1,
             uniform="reading_columns",
         )
-        self.content_frame.grid_rowconfigure(
-            1,
+        content.grid_rowconfigure(
+            0,
             weight=1,
         )
 
-        self.text_label = ctk.CTkLabel(
-            self.content_frame,
-            text="Text",
-            anchor="w",
-            font=ctk.CTkFont(
-                size=16,
-                weight="bold",
-            ),
-        )
-        self.text_label.grid(
+        self.create_text_card(content)
+        self.create_guide_card(content)
+
+    def create_text_card(
+        self,
+        master,
+    ):
+        card = self.create_card(master)
+        card.grid(
             row=0,
             column=0,
-            padx=(0, 10),
-            pady=(0, 6),
-            sticky="ew",
+            padx=(0, theme.GAP // 2),
+            sticky="nsew",
+        )
+        card.grid_columnconfigure(
+            0,
+            weight=1,
+        )
+        card.grid_rowconfigure(
+            2,
+            weight=1,
         )
 
-        self.guide_label = ctk.CTkLabel(
-            self.content_frame,
-            text="Reading Guide",
-            anchor="w",
-            font=ctk.CTkFont(
-                size=16,
-                weight="bold",
-            ),
-        )
-        self.guide_label.grid(
-            row=0,
-            column=1,
-            padx=(10, 0),
-            pady=(0, 6),
-            sticky="ew",
+        self.text_label = self.create_card_header(
+            card,
+            "TEXT",
         )
 
-        # -----------------------------------------------------
-        # Original text
-        # -----------------------------------------------------
         self.textbox = ctk.CTkTextbox(
-            self.content_frame,
+            card,
             font=ctk.CTkFont(
-                size=18,
+                size=theme.FONT_READING,
             ),
             wrap="word",
+            fg_color="transparent",
+            border_width=0,
+            text_color=theme.TEXT,
+            scrollbar_button_color=theme.SURFACE_INSET,
+            scrollbar_button_hover_color=(
+                theme.BORDER_STRONG
+            ),
         )
         self.textbox.grid(
-            row=1,
+            row=2,
             column=0,
-            padx=(0, 10),
+            padx=(14, 8),
+            pady=(10, 14),
             sticky="nsew",
         )
 
         self.textbox.tag_config(
             "current_word",
-            background="#FACC15",
-            foreground="#111827",
+            background=theme.HIGHLIGHT_BG,
+            foreground=theme.HIGHLIGHT_FG,
         )
 
         self.textbox.edit_modified(False)
@@ -389,21 +661,50 @@ class EnglishReaderApp(ctk.CTk):
             self.on_text_double_click,
         )
 
+    def create_guide_card(
+        self,
+        master,
+    ):
         # -----------------------------------------------------
-        # Reading Guide
-        #
         # A scrollable frame is used instead of a CTkTextbox
         # because CTkTextbox intentionally forbids per-tag font
-        # sizes. Labels let us render normal text at 16 and IPA
+        # sizes. Labels let us render normal text at 15 and IPA
         # at 14 without relying on private widget internals.
         # -----------------------------------------------------
+        card = self.create_card(master)
+        card.grid(
+            row=0,
+            column=1,
+            padx=(theme.GAP // 2, 0),
+            sticky="nsew",
+        )
+        card.grid_columnconfigure(
+            0,
+            weight=1,
+        )
+        card.grid_rowconfigure(
+            2,
+            weight=1,
+        )
+
+        self.guide_label = self.create_card_header(
+            card,
+            "READING GUIDE",
+        )
+
         self.guide_frame = ctk.CTkScrollableFrame(
-            self.content_frame,
+            card,
+            fg_color="transparent",
+            scrollbar_button_color=theme.SURFACE_INSET,
+            scrollbar_button_hover_color=(
+                theme.BORDER_STRONG
+            ),
         )
         self.guide_frame.grid(
-            row=1,
-            column=1,
-            padx=(10, 0),
+            row=2,
+            column=0,
+            padx=(8, 6),
+            pady=(8, 12),
             sticky="nsew",
         )
         self.guide_frame.grid_columnconfigure(
@@ -416,138 +717,204 @@ class EnglishReaderApp(ctk.CTk):
         )
 
         self.render_guide_message(
-            "Generate audio to create the pronunciation guide."
+            "Generate audio to create the "
+            "pronunciation guide."
         )
 
-        # -----------------------------------------------------
-        # Options
-        # -----------------------------------------------------
-        self.options_frame = ctk.CTkFrame(
-            self,
-            fg_color="transparent",
+    # ---------------------------------------------------------
+    # Control bar
+    # ---------------------------------------------------------
+    def create_control_bar(
+        self,
+        row: int,
+    ):
+        card = self.create_card(self)
+        card.grid(
+            row=row,
+            column=0,
+            padx=theme.PAD_WINDOW,
+            pady=(0, 12),
+            sticky="ew",
         )
-        self.options_frame.pack(
-            padx=32,
-            pady=(18, 0),
-            fill="x",
-        )
-        self.options_frame.grid_columnconfigure(
-            (0, 1, 2),
+        card.grid_columnconfigure(
+            0,
             weight=1,
         )
 
-        self.accent_label = ctk.CTkLabel(
+        self.create_options_row(
+            card,
+            row=0,
+        )
+        self.create_progress_row(
+            card,
+            row=1,
+        )
+        self.create_transport_row(
+            card,
+            row=2,
+        )
+        self.create_separator(
+            row=3,
+            master=card,
+            padx=theme.PAD_CARD_X,
+            pady=(4, 0),
+        )
+        self.create_shadowing_row(
+            card,
+            row=4,
+        )
+
+    def create_options_row(
+        self,
+        card,
+        row: int,
+    ):
+        self.options_frame = ctk.CTkFrame(
+            card,
+            fg_color="transparent",
+        )
+        self.options_frame.grid(
+            row=row,
+            column=0,
+            padx=theme.PAD_CARD_X,
+            pady=(theme.PAD_CARD_Y, 0),
+            sticky="ew",
+        )
+        self.options_frame.grid_columnconfigure(
+            (0, 1, 2, 3),
+            weight=1,
+        )
+
+        accent_group = ctk.CTkFrame(
             self.options_frame,
-            text="Accent",
+            fg_color="transparent",
+        )
+        accent_group.grid(
+            row=0,
+            column=0,
+            padx=(0, 7),
+            sticky="ew",
+        )
+        accent_group.grid_columnconfigure(
+            0,
+            weight=1,
+        )
+
+        self.accent_label = self.create_section_label(
+            accent_group,
+            "ACCENT",
         )
         self.accent_label.grid(
             row=0,
             column=0,
-            padx=5,
-            sticky="w",
+            pady=(0, 6),
+            sticky="ew",
         )
 
-        self.accent_menu = ctk.CTkOptionMenu(
-            self.options_frame,
-            values=list(
-                ACCENTS.keys()
-            ),
-            command=self.on_configuration_changed,
+        self.accent_menu = self.create_segmented_button(
+            accent_group,
+            list(ACCENTS.keys()),
         )
         self.accent_menu.set("American")
         self.accent_menu.grid(
             row=1,
             column=0,
-            padx=5,
-            pady=(5, 0),
             sticky="ew",
         )
 
-        self.voice_label = ctk.CTkLabel(
+        voice_group = ctk.CTkFrame(
             self.options_frame,
-            text="Voice",
+            fg_color="transparent",
+        )
+        voice_group.grid(
+            row=0,
+            column=1,
+            padx=7,
+            sticky="ew",
+        )
+        voice_group.grid_columnconfigure(
+            0,
+            weight=1,
+        )
+
+        self.voice_label = self.create_section_label(
+            voice_group,
+            "VOICE",
         )
         self.voice_label.grid(
             row=0,
-            column=1,
-            padx=5,
-            sticky="w",
+            column=0,
+            pady=(0, 6),
+            sticky="ew",
         )
 
-        self.voice_menu = ctk.CTkOptionMenu(
-            self.options_frame,
-            values=[
+        self.voice_menu = self.create_segmented_button(
+            voice_group,
+            [
                 "Male",
                 "Female",
             ],
-            command=self.on_configuration_changed,
         )
         self.voice_menu.set("Male")
         self.voice_menu.grid(
             row=1,
-            column=1,
-            padx=5,
-            pady=(5, 0),
+            column=0,
             sticky="ew",
         )
 
-        self.speed_label = ctk.CTkLabel(
+        speed_group = ctk.CTkFrame(
             self.options_frame,
-            text="Speed",
+            fg_color="transparent",
+        )
+        speed_group.grid(
+            row=0,
+            column=2,
+            columnspan=2,
+            padx=(7, 0),
+            sticky="ew",
+        )
+        speed_group.grid_columnconfigure(
+            0,
+            weight=1,
+        )
+
+        self.speed_label = self.create_section_label(
+            speed_group,
+            "SPEED",
         )
         self.speed_label.grid(
             row=0,
-            column=2,
-            padx=5,
-            sticky="w",
+            column=0,
+            pady=(0, 6),
+            sticky="ew",
         )
 
-        self.speed_menu = ctk.CTkOptionMenu(
-            self.options_frame,
-            values=list(
-                SPEEDS.keys()
-            ),
-            command=self.on_configuration_changed,
+        self.speed_menu = self.create_segmented_button(
+            speed_group,
+            list(SPEEDS.keys()),
         )
         self.speed_menu.set("Learning")
         self.speed_menu.grid(
             row=1,
-            column=2,
-            padx=5,
-            pady=(5, 0),
+            column=0,
             sticky="ew",
         )
 
-        # -----------------------------------------------------
-        # Generate
-        # -----------------------------------------------------
-        self.read_button = ctk.CTkButton(
-            self,
-            text="▶ Generate & Play",
-            height=44,
-            font=ctk.CTkFont(
-                size=16,
-                weight="bold",
-            ),
-            command=self.on_read,
-        )
-        self.read_button.pack(
-            padx=37,
-            pady=(18, 14),
-            fill="x",
-        )
-
-        # -----------------------------------------------------
-        # Progress
-        # -----------------------------------------------------
+    def create_progress_row(
+        self,
+        card,
+        row: int,
+    ):
         self.progress_frame = ctk.CTkFrame(
-            self,
+            card,
             fg_color="transparent",
         )
-        self.progress_frame.pack(
-            padx=40,
-            pady=(0, 12),
-            fill="x",
+        self.progress_frame.grid(
+            row=row,
+            column=0,
+            padx=theme.PAD_CARD_X,
+            pady=(theme.GAP, 0),
+            sticky="ew",
         )
         self.progress_frame.grid_columnconfigure(
             1,
@@ -557,12 +924,17 @@ class EnglishReaderApp(ctk.CTk):
         self.current_time_label = ctk.CTkLabel(
             self.progress_frame,
             text="00:00",
-            width=50,
+            width=46,
+            anchor="w",
+            font=ctk.CTkFont(
+                size=theme.FONT_SMALL,
+            ),
+            text_color=theme.TEXT_SECONDARY,
         )
         self.current_time_label.grid(
             row=0,
             column=0,
-            padx=(0, 10),
+            padx=(0, 12),
         )
 
         self.progress_slider = ctk.CTkSlider(
@@ -571,6 +943,10 @@ class EnglishReaderApp(ctk.CTk):
             to=1,
             command=self.on_seek,
             state="disabled",
+            fg_color=theme.SURFACE_INSET,
+            progress_color=theme.ACCENT,
+            button_color=theme.ACCENT,
+            button_hover_color=theme.ACCENT_HOVER,
         )
         self.progress_slider.set(0)
         self.progress_slider.grid(
@@ -582,198 +958,322 @@ class EnglishReaderApp(ctk.CTk):
         self.duration_label = ctk.CTkLabel(
             self.progress_frame,
             text="00:00",
-            width=50,
+            width=46,
+            anchor="e",
+            font=ctk.CTkFont(
+                size=theme.FONT_SMALL,
+            ),
+            text_color=theme.TEXT_SECONDARY,
         )
         self.duration_label.grid(
             row=0,
             column=2,
-            padx=(10, 0),
+            padx=(12, 0),
         )
 
-        # -----------------------------------------------------
-        # Media controls
-        # -----------------------------------------------------
+    def create_transport_row(
+        self,
+        card,
+        row: int,
+    ):
         self.media_frame = ctk.CTkFrame(
-            self,
+            card,
             fg_color="transparent",
         )
-        self.media_frame.pack(
-            padx=40,
-            fill="x",
+        self.media_frame.grid(
+            row=row,
+            column=0,
+            padx=theme.PAD_CARD_X,
+            pady=(theme.GAP, 0),
+            sticky="ew",
         )
         self.media_frame.grid_columnconfigure(
-            (0, 1, 2, 3, 4),
+            5,
             weight=1,
         )
 
-        self.rewind_button = ctk.CTkButton(
+        self.rewind_button = self.create_media_button(
             self.media_frame,
-            text="↶ 1s",
-            command=self.on_rewind,
-            state="disabled",
+            "↶ 1s",
+            self.on_rewind,
         )
         self.rewind_button.grid(
             row=0,
             column=0,
-            padx=5,
-            sticky="ew",
+            padx=(0, 8),
         )
 
-        self.replay_button = ctk.CTkButton(
+        self.replay_button = self.create_media_button(
             self.media_frame,
-            text="↻ Replay",
-            command=self.on_replay,
-            state="disabled",
+            "↻ Replay",
+            self.on_replay,
         )
         self.replay_button.grid(
             row=0,
             column=1,
-            padx=5,
-            sticky="ew",
+            padx=(0, 8),
         )
 
-        self.pause_button = ctk.CTkButton(
+        self.pause_button = self.create_media_button(
             self.media_frame,
-            text="⏸ Pause",
-            command=self.on_play_pause,
-            state="disabled",
+            "⏸ Pause",
+            self.on_play_pause,
         )
         self.pause_button.grid(
             row=0,
             column=2,
-            padx=5,
-            sticky="ew",
+            padx=(0, 8),
         )
 
-        self.stop_button = ctk.CTkButton(
+        self.stop_button = self.create_media_button(
             self.media_frame,
-            text="⏹ Stop",
-            command=self.on_stop,
-            state="disabled",
+            "⏹ Stop",
+            self.on_stop,
         )
         self.stop_button.grid(
             row=0,
             column=3,
-            padx=5,
-            sticky="ew",
+            padx=(0, 8),
         )
 
-        self.forward_button = ctk.CTkButton(
+        self.forward_button = self.create_media_button(
             self.media_frame,
-            text="1s ↷",
-            command=self.on_forward,
-            state="disabled",
+            "1s ↷",
+            self.on_forward,
         )
         self.forward_button.grid(
             row=0,
             column=4,
-            padx=5,
-            sticky="ew",
         )
 
-        # -----------------------------------------------------
-        # Shadowing practice
-        # -----------------------------------------------------
+        self.read_button = ctk.CTkButton(
+            self.media_frame,
+            text="▶ Generate & Play",
+            width=224,
+            height=theme.HEIGHT_PRIMARY,
+            corner_radius=theme.RADIUS_PRIMARY,
+            fg_color=theme.ACCENT,
+            hover_color=theme.ACCENT_HOVER,
+            text_color=theme.ON_ACCENT,
+            text_color_disabled=theme.ACCENT_SOFT,
+            font=ctk.CTkFont(
+                size=theme.FONT_PRIMARY,
+                weight="bold",
+            ),
+            command=self.on_read,
+        )
+        self.read_button.grid(
+            row=0,
+            column=6,
+        )
+
+    def create_shadowing_row(
+        self,
+        card,
+        row: int,
+    ):
         self.shadowing_frame = ctk.CTkFrame(
-            self,
+            card,
             fg_color="transparent",
         )
-        self.shadowing_frame.pack(
-            padx=40,
-            pady=(12, 0),
-            fill="x",
+        self.shadowing_frame.grid(
+            row=row,
+            column=0,
+            padx=theme.PAD_CARD_X,
+            pady=(theme.GAP, theme.PAD_CARD_Y),
+            sticky="ew",
         )
         self.shadowing_frame.grid_columnconfigure(
-            0,
-            weight=2,
-        )
-        self.shadowing_frame.grid_columnconfigure(
-            (1, 2),
+            1,
             weight=1,
+        )
+
+        self.shadowing_label = self.create_section_label(
+            self.shadowing_frame,
+            "SHADOWING",
+        )
+        self.shadowing_label.grid(
+            row=0,
+            column=0,
+            padx=(0, 14),
+        )
+
+        self.shadowing_info_label = ctk.CTkLabel(
+            self.shadowing_frame,
+            text=(
+                "Generate audio before starting "
+                "Shadowing."
+            ),
+            anchor="w",
+            font=ctk.CTkFont(
+                size=theme.FONT_SMALL,
+            ),
+            text_color=theme.TEXT_MUTED,
+        )
+        self.shadowing_info_label.grid(
+            row=0,
+            column=1,
+            padx=(0, 14),
+            sticky="ew",
         )
 
         self.shadowing_button = ctk.CTkButton(
             self.shadowing_frame,
-            text="🎙 Shadowing",
-            height=38,
+            text="● Record",
+            width=152,
+            height=theme.HEIGHT_CONTROL,
+            corner_radius=theme.RADIUS_CONTROL,
+            border_width=1,
+            border_color=theme.BORDER_STRONG,
+            fg_color=theme.SURFACE_INSET,
+            hover_color=theme.BORDER_STRONG,
+            text_color=theme.TEXT,
+            text_color_disabled=theme.TEXT_DISABLED,
+            font=ctk.CTkFont(
+                size=theme.FONT_CONTROL,
+            ),
             command=self.on_shadowing_button,
             state="disabled",
         )
         self.shadowing_button.grid(
             row=0,
-            column=0,
-            padx=(0, 5),
-            sticky="ew",
+            column=2,
+            padx=(0, 8),
         )
 
         self.shadowing_mine_button = ctk.CTkButton(
             self.shadowing_frame,
             text="▶ Mine",
-            height=38,
+            width=112,
+            height=theme.HEIGHT_CONTROL,
+            corner_radius=theme.RADIUS_CONTROL,
+            border_width=1,
+            border_color=theme.BORDER_STRONG,
+            fg_color="transparent",
+            hover_color=theme.SURFACE_INSET,
+            text_color=theme.TEXT_SECONDARY,
+            text_color_disabled=theme.TEXT_DISABLED,
+            font=ctk.CTkFont(
+                size=theme.FONT_CONTROL,
+            ),
             command=self.play_shadowing_mine,
             state="disabled",
         )
         self.shadowing_mine_button.grid(
             row=0,
-            column=1,
-            padx=5,
-            sticky="ew",
+            column=3,
+            padx=(0, 8),
         )
 
         self.shadowing_reference_button = ctk.CTkButton(
             self.shadowing_frame,
             text="▶ Reference",
-            height=38,
+            width=132,
+            height=theme.HEIGHT_CONTROL,
+            corner_radius=theme.RADIUS_CONTROL,
+            border_width=1,
+            border_color=theme.BORDER_STRONG,
+            fg_color="transparent",
+            hover_color=theme.SURFACE_INSET,
+            text_color=theme.TEXT_SECONDARY,
+            text_color_disabled=theme.TEXT_DISABLED,
+            font=ctk.CTkFont(
+                size=theme.FONT_CONTROL,
+            ),
             command=self.play_shadowing_reference,
             state="disabled",
         )
         self.shadowing_reference_button.grid(
             row=0,
-            column=2,
-            padx=(5, 0),
+            column=4,
+        )
+
+    def style_shadowing_button(
+        self,
+        recording: bool,
+    ):
+        """Turn the shadowing button red while it records.
+
+        Recording is the only destructive-feeling state in the app, and
+        it is the one moment where the button means "stop", not "start".
+        """
+        if recording:
+            self.shadowing_button.configure(
+                fg_color=theme.DANGER,
+                hover_color=theme.DANGER_HOVER,
+                border_color=theme.DANGER,
+                text_color=theme.ON_ACCENT,
+            )
+            return
+
+        self.shadowing_button.configure(
+            fg_color=theme.SURFACE_INSET,
+            hover_color=theme.BORDER_STRONG,
+            border_color=theme.BORDER_STRONG,
+            text_color=theme.TEXT,
+        )
+
+    # ---------------------------------------------------------
+    # Status bar
+    # ---------------------------------------------------------
+    def create_status_bar(
+        self,
+        row: int,
+    ):
+        bar = ctk.CTkFrame(
+            self,
+            height=theme.HEIGHT_STATUSBAR,
+            fg_color="transparent",
+        )
+        bar.grid(
+            row=row,
+            column=0,
+            sticky="ew",
+        )
+        bar.grid_propagate(False)
+        bar.grid_rowconfigure(
+            0,
+            weight=1,
+        )
+        bar.grid_columnconfigure(
+            0,
+            weight=1,
+        )
+
+        self.status_label = ctk.CTkLabel(
+            bar,
+            text="Ready",
+            anchor="w",
+            font=ctk.CTkFont(
+                size=theme.FONT_SMALL,
+            ),
+            text_color=theme.TEXT_SECONDARY,
+        )
+        self.status_label.grid(
+            row=0,
+            column=0,
+            padx=(26, 16),
             sticky="ew",
         )
 
-        self.shadowing_info_label = ctk.CTkLabel(
-            self,
-            text="Generate audio before starting Shadowing.",
-            font=ctk.CTkFont(
-                size=12,
-            ),
-            text_color=(
-                "gray45",
-                "gray65",
-            ),
-        )
-        self.shadowing_info_label.pack(
-            pady=(6, 0)
-        )
-
         self.shortcuts_label = ctk.CTkLabel(
-            self,
+            bar,
             text=(
                 "Space  Play/Pause    ·    "
                 "←  -1s    ·    →  +1s    ·    "
                 "Double-click word  Repeat ×3"
             ),
+            anchor="e",
             font=ctk.CTkFont(
-                size=12,
+                size=theme.FONT_LABEL,
             ),
-            text_color=(
-                "gray45",
-                "gray65",
-            ),
+            text_color=theme.TEXT_MUTED,
         )
-        self.shortcuts_label.pack(
-            pady=(8, 0)
-        )
-
-        self.status_label = ctk.CTkLabel(
-            self,
-            text="Ready",
-        )
-        self.status_label.pack(
-            pady=(12, 16)
+        self.shortcuts_label.grid(
+            row=0,
+            column=1,
+            padx=(0, 26),
+            sticky="e",
         )
 
     # =========================================================
@@ -890,8 +1390,24 @@ class EnglishReaderApp(ctk.CTk):
             False
         )
 
+    def format_pdf_name(
+        self,
+        path: str,
+        limit: int = 44,
+    ) -> str:
+        """Shorten the file name so it cannot push the top bar wider."""
+        name = Path(path).name
+
+        if len(name) <= limit:
+            return name
+
+        return f"{name[:limit - 1]}…"
+
     def update_pdf_controls(self):
         if self.pdf_document is None:
+            self.pdf_file_label.configure(
+                text=""
+            )
             self.pdf_page_label.configure(
                 text="No PDF loaded"
             )
@@ -904,6 +1420,12 @@ class EnglishReaderApp(ctk.CTk):
             return
 
         page_count = self.pdf_document.page_count
+
+        self.pdf_file_label.configure(
+            text=self.format_pdf_name(
+                self.pdf_document.path
+            )
+        )
 
         self.pdf_page_label.configure(
             text=(
@@ -959,10 +1481,7 @@ class EnglishReaderApp(ctk.CTk):
 
         self.read_button.configure(
             state="disabled",
-            text=(
-                "Generating audio and "
-                "pronunciation guide..."
-            ),
+            text="Generating...",
         )
 
         self.disable_media_buttons()
@@ -972,7 +1491,10 @@ class EnglishReaderApp(ctk.CTk):
         )
 
         self.status_label.configure(
-            text="Generating..."
+            text=(
+                "Generating audio and "
+                "pronunciation guide..."
+            )
         )
 
         thread = threading.Thread(
@@ -1233,10 +1755,11 @@ class EnglishReaderApp(ctk.CTk):
             text=message,
             anchor="nw",
             justify="left",
-            wraplength=500,
+            wraplength=470,
             font=ctk.CTkFont(
                 size=14,
             ),
+            text_color=theme.TEXT_MUTED,
         )
         label.grid(
             row=0,
@@ -1318,14 +1841,15 @@ class EnglishReaderApp(ctk.CTk):
         for sentence in guide["sentences"]:
             pronunciation.add_text(
                 sentence["text"],
-                size=16,
+                size=theme.FONT_GUIDE,
                 pady=(4, 1),
             )
 
             pronunciation.add_text(
                 f"/{sentence['ipa']}/",
-                size=14,
+                size=theme.FONT_IPA,
                 pady=(0, 12),
+                text_color=theme.ACCENT_SOFT,
             )
 
         # Connected speech is also immediately useful while listening.
@@ -1434,8 +1958,11 @@ class EnglishReaderApp(ctk.CTk):
         self.shadowing_recording_duration = 0.0
 
         self.shadowing_button.configure(
-            text="🎙 Shadowing",
+            text="● Record",
             state="normal",
+        )
+        self.style_shadowing_button(
+            recording=False
         )
         self.shadowing_mine_button.configure(
             state="disabled"
@@ -1532,6 +2059,9 @@ class EnglishReaderApp(ctk.CTk):
         self.shadowing_button.configure(
             text=f"Cancel · {value}"
         )
+        self.style_shadowing_button(
+            recording=False
+        )
         self.shadowing_info_label.configure(
             text=(
                 f"Recording starts in {value}..."
@@ -1605,6 +2135,9 @@ class EnglishReaderApp(ctk.CTk):
             text="■ Stop Recording",
             state="normal",
         )
+        self.style_shadowing_button(
+            recording=True
+        )
 
         if beep_error:
             self.shadowing_info_label.configure(
@@ -1669,6 +2202,9 @@ class EnglishReaderApp(ctk.CTk):
         self.shadowing_button.configure(
             text="↻ Retry",
             state="normal",
+        )
+        self.style_shadowing_button(
+            recording=False
         )
         self.shadowing_mine_button.configure(
             state="disabled"
@@ -1990,13 +2526,16 @@ class EnglishReaderApp(ctk.CTk):
                 text=(
                     "↻ Retry"
                     if has_recording()
-                    else "🎙 Shadowing"
+                    else "● Record"
                 ),
                 state=(
                     "normal"
                     if self.audio_loaded
                     else "disabled"
                 ),
+            )
+            self.style_shadowing_button(
+                recording=False
             )
 
             if self.audio_loaded:
@@ -2109,13 +2648,16 @@ class EnglishReaderApp(ctk.CTk):
             text=(
                 "↻ Retry"
                 if has_recording()
-                else "🎙 Shadowing"
+                else "● Record"
             ),
             state=(
                 "normal"
                 if self.audio_loaded
                 else "disabled"
             ),
+        )
+        self.style_shadowing_button(
+            recording=False
         )
 
         self.status_label.configure(
@@ -2968,8 +3510,11 @@ class EnglishReaderApp(ctk.CTk):
 
         if hasattr(self, "shadowing_button"):
             self.shadowing_button.configure(
-                text="🎙 Shadowing",
+                text="● Record",
                 state="disabled",
+            )
+            self.style_shadowing_button(
+                recording=False
             )
             self.shadowing_mine_button.configure(
                 state="disabled"
