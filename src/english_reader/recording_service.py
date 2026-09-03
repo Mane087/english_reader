@@ -15,6 +15,7 @@ _recording_frames = []
 _recording_lock = threading.Lock()
 _recording_sample_rate = 44_100
 _recording_active = False
+_recording_paused = False
 _recording_player = AudioPlayer()
 
 
@@ -22,6 +23,9 @@ def _recording_callback(indata, frames, time_info, status):
     del frames, time_info, status
 
     with _recording_lock:
+        if _recording_paused:
+            return
+
         _recording_frames.append(indata.copy())
 
 
@@ -30,6 +34,7 @@ def start_recording() -> int:
     global _recording_frames
     global _recording_sample_rate
     global _recording_active
+    global _recording_paused
 
     if _recording_active:
         raise RuntimeError("A recording is already in progress.")
@@ -62,6 +67,9 @@ def start_recording() -> int:
     _recording_sample_rate = sample_rate
     _recording_active = True
 
+    with _recording_lock:
+        _recording_paused = False
+
     return sample_rate
 
 
@@ -69,6 +77,7 @@ def stop_recording() -> float:
     global _recording_stream
     global _recording_active
     global _recording_frames
+    global _recording_paused
 
     if not _recording_active or _recording_stream is None:
         raise RuntimeError("No recording is currently in progress.")
@@ -86,6 +95,7 @@ def stop_recording() -> float:
     with _recording_lock:
         chunks = list(_recording_frames)
         _recording_frames = []
+        _recording_paused = False
 
     if not chunks:
         raise RuntimeError(
@@ -114,6 +124,7 @@ def cancel_recording() -> None:
     global _recording_stream
     global _recording_active
     global _recording_frames
+    global _recording_paused
 
     stream = _recording_stream
 
@@ -133,10 +144,42 @@ def cancel_recording() -> None:
 
     with _recording_lock:
         _recording_frames = []
+        _recording_paused = False
 
 
 def is_recording() -> bool:
     return _recording_active
+
+
+def pause_recording() -> None:
+    """Stop accumulating microphone frames without closing the stream.
+
+    The PortAudio input stream stays open on purpose: reopening a capture
+    device mid-session is the fragile part on ALSA, and the saved duration
+    already excludes the paused span because it is derived from the frames
+    that were kept.
+    """
+    global _recording_paused
+
+    if not _recording_active:
+        return
+
+    with _recording_lock:
+        _recording_paused = True
+
+
+def resume_recording() -> None:
+    global _recording_paused
+
+    if not _recording_active:
+        return
+
+    with _recording_lock:
+        _recording_paused = False
+
+
+def is_recording_paused() -> bool:
+    return _recording_active and _recording_paused
 
 
 def has_recording() -> bool:
@@ -175,6 +218,18 @@ def stop_recording_playback() -> None:
 
 def is_recording_playing() -> bool:
     return _recording_player.is_playing()
+
+
+def pause_recording_playback() -> None:
+    _recording_player.pause()
+
+
+def resume_recording_playback() -> None:
+    _recording_player.resume()
+
+
+def is_recording_playback_paused() -> bool:
+    return _recording_player.is_paused()
 
 
 def play_beep(

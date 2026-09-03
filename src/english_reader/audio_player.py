@@ -26,6 +26,7 @@ class AudioPlayer:
         self._data = None
         self._sample_rate = 0
         self._cursor = 0
+        self._paused = False
 
     # -----------------------------------------------------------------
     # Loading
@@ -68,6 +69,7 @@ class AudioPlayer:
             self._data = data
             self._sample_rate = int(sample_rate)
             self._cursor = 0
+            self._paused = False
 
         self._stream = stream
 
@@ -90,6 +92,7 @@ class AudioPlayer:
             self._data = None
             self._sample_rate = 0
             self._cursor = 0
+            self._paused = False
 
     # -----------------------------------------------------------------
     # Stream callback
@@ -143,6 +146,8 @@ class AudioPlayer:
             if self._cursor >= total:
                 self._cursor = 0
 
+            self._paused = False
+
         self._restart_stream()
 
     # ``AVAudioPlayer.play`` resumed from the current position, so resuming
@@ -169,6 +174,7 @@ class AudioPlayer:
                 0,
                 self._cursor - latency_frames,
             )
+            self._paused = True
 
     def stop(self) -> None:
         stream = self._stream
@@ -183,6 +189,7 @@ class AudioPlayer:
 
         with self._lock:
             self._cursor = 0
+            self._paused = False
 
     def replay(self) -> None:
         if self._stream is None:
@@ -190,6 +197,7 @@ class AudioPlayer:
 
         with self._lock:
             self._cursor = 0
+            self._paused = False
 
         self._restart_stream()
 
@@ -263,6 +271,22 @@ class AudioPlayer:
             return False
 
         return bool(stream.active)
+
+    def is_paused(self) -> bool:
+        """True while playback is held at a position the caller can resume.
+
+        ``is_playing`` cannot tell a pause from the end of the file, because
+        the stream is inactive in both cases. Callers that poll for the end
+        of playback need this flag to avoid treating a pause as completion.
+        """
+        if self._stream is None:
+            return False
+
+        with self._lock:
+            return (
+                self._paused
+                and self._data is not None
+            )
 
     # -----------------------------------------------------------------
     # Internals

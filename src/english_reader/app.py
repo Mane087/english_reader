@@ -17,9 +17,15 @@ from .recording_service import (
     get_recording_duration,
     has_recording,
     is_recording,
+    is_recording_paused,
+    is_recording_playback_paused,
     is_recording_playing,
+    pause_recording,
+    pause_recording_playback,
     play_beep,
     play_recording,
+    resume_recording,
+    resume_recording_playback,
     start_recording,
     stop_recording,
     stop_recording_playback,
@@ -210,6 +216,8 @@ class EnglishReaderApp(ctk.CTk):
         self.shadowing_countdown_value = 0
         self.shadowing_recording_started_at = None
         self.shadowing_recording_duration = 0.0
+        self.shadowing_recording_paused_total = 0.0
+        self.shadowing_recording_paused_at = None
 
         self.create_widgets()
         self.bind_media_shortcuts()
@@ -1141,6 +1149,32 @@ class EnglishReaderApp(ctk.CTk):
             padx=(0, 8),
         )
 
+        self.shadowing_pause_button = ctk.CTkButton(
+            self.shadowing_frame,
+            text="⏸ Pause",
+            width=112,
+            height=theme.HEIGHT_CONTROL,
+            corner_radius=theme.RADIUS_CONTROL,
+            border_width=1,
+            border_color=theme.BORDER_STRONG,
+            fg_color="transparent",
+            hover_color=theme.SURFACE_INSET,
+            text_color=theme.TEXT_SECONDARY,
+            text_color_disabled=theme.TEXT_DISABLED,
+            font=ctk.CTkFont(
+                size=theme.FONT_CONTROL,
+            ),
+            command=self.on_shadowing_pause_button,
+        )
+        self.shadowing_pause_button.grid(
+            row=0,
+            column=3,
+            padx=(0, 8),
+        )
+        # Only meaningful while there is audio running, so it stays out of
+        # the row until recording or playback of the recording starts.
+        self.shadowing_pause_button.grid_remove()
+
         self.shadowing_mine_button = ctk.CTkButton(
             self.shadowing_frame,
             text="▶ Mine",
@@ -1161,7 +1195,7 @@ class EnglishReaderApp(ctk.CTk):
         )
         self.shadowing_mine_button.grid(
             row=0,
-            column=3,
+            column=4,
             padx=(0, 8),
         )
 
@@ -1185,7 +1219,7 @@ class EnglishReaderApp(ctk.CTk):
         )
         self.shadowing_reference_button.grid(
             row=0,
-            column=4,
+            column=5,
         )
 
     def style_shadowing_button(
@@ -1978,6 +2012,138 @@ class EnglishReaderApp(ctk.CTk):
             )
         )
 
+    def show_shadowing_pause_button(self):
+        self.shadowing_pause_button.grid()
+        self.shadowing_pause_button.configure(
+            state="normal"
+        )
+        self.set_shadowing_pause_button_paused(
+            False
+        )
+
+    def hide_shadowing_pause_button(self):
+        if not hasattr(self, "shadowing_pause_button"):
+            return
+
+        self.shadowing_pause_button.grid_remove()
+        self.set_shadowing_pause_button_paused(
+            False
+        )
+
+    def set_shadowing_pause_button_paused(
+        self,
+        paused: bool,
+    ):
+        if not hasattr(self, "shadowing_pause_button"):
+            return
+
+        self.shadowing_pause_button.configure(
+            text=(
+                "▶ Resume"
+                if paused
+                else "⏸ Pause"
+            )
+        )
+
+    def reset_shadowing_pause_tracking(self):
+        self.shadowing_recording_paused_total = 0.0
+        self.shadowing_recording_paused_at = None
+
+    def on_shadowing_pause_button(self):
+        if self.shadowing_state == "recording":
+            self.toggle_shadowing_recording_pause()
+            return
+
+        if self.shadowing_state in {
+            "playing_mine_auto",
+            "playing_mine_manual",
+        }:
+            self.toggle_shadowing_mine_pause()
+
+    def toggle_shadowing_recording_pause(self):
+        if not is_recording():
+            return
+
+        if is_recording_paused():
+            resume_recording()
+
+            if self.shadowing_recording_paused_at is not None:
+                self.shadowing_recording_paused_total += (
+                    time.monotonic()
+                    - self.shadowing_recording_paused_at
+                )
+                self.shadowing_recording_paused_at = None
+
+            self.set_shadowing_pause_button_paused(
+                False
+            )
+            self.status_label.configure(
+                text="● Recording"
+            )
+            return
+
+        pause_recording()
+
+        self.shadowing_recording_paused_at = (
+            time.monotonic()
+        )
+        self.set_shadowing_pause_button_paused(
+            True
+        )
+        self.status_label.configure(
+            text="❚❚ Recording paused"
+        )
+
+    def toggle_shadowing_mine_pause(self):
+        if is_recording_playback_paused():
+            resume_recording_playback()
+
+            self.set_shadowing_pause_button_paused(
+                False
+            )
+            self.status_label.configure(
+                text="Shadowing · Playing your recording"
+            )
+            return
+
+        if not is_recording_playing():
+            return
+
+        pause_recording_playback()
+
+        self.set_shadowing_pause_button_paused(
+            True
+        )
+        self.status_label.configure(
+            text="Shadowing · Your recording paused"
+        )
+
+    def shadowing_recording_elapsed(self) -> float:
+        """Recorded seconds, excluding the time spent paused.
+
+        The timer follows the wall clock, but paused spans never reach the
+        WAV file, so they have to be subtracted for the label to match the
+        duration reported once the recording is saved.
+        """
+        if self.shadowing_recording_started_at is None:
+            return 0.0
+
+        now = time.monotonic()
+
+        elapsed = (
+            now
+            - self.shadowing_recording_started_at
+            - self.shadowing_recording_paused_total
+        )
+
+        if self.shadowing_recording_paused_at is not None:
+            elapsed -= (
+                now
+                - self.shadowing_recording_paused_at
+            )
+
+        return max(0.0, elapsed)
+
     def on_shadowing_button(self):
         if not self.audio_loaded:
             return
@@ -2130,6 +2296,8 @@ class EnglishReaderApp(ctk.CTk):
         self.shadowing_recording_started_at = (
             time.monotonic()
         )
+        self.reset_shadowing_pause_tracking()
+        self.show_shadowing_pause_button()
 
         self.shadowing_button.configure(
             text="■ Stop Recording",
@@ -2165,14 +2333,17 @@ class EnglishReaderApp(ctk.CTk):
         ):
             return
 
-        elapsed = (
-            time.monotonic()
-            - self.shadowing_recording_started_at
+        elapsed = self.shadowing_recording_elapsed()
+
+        prefix = (
+            "❚❚ Paused · "
+            if is_recording_paused()
+            else "● Recording · "
         )
 
         self.shadowing_info_label.configure(
             text=(
-                "● Recording · "
+                f"{prefix}"
                 f"{self.format_precise_duration(elapsed)}"
             )
         )
@@ -2198,6 +2369,8 @@ class EnglishReaderApp(ctk.CTk):
 
         self.shadowing_recording_duration = duration
         self.shadowing_recording_started_at = None
+        self.reset_shadowing_pause_tracking()
+        self.hide_shadowing_pause_button()
 
         self.shadowing_button.configure(
             text="↻ Retry",
@@ -2242,6 +2415,7 @@ class EnglishReaderApp(ctk.CTk):
             return
 
         self.shadowing_state = "playing_mine_auto"
+        self.show_shadowing_pause_button()
         self.status_label.configure(
             text="Shadowing · Playing your recording"
         )
@@ -2257,12 +2431,17 @@ class EnglishReaderApp(ctk.CTk):
         if self.shadowing_state != "playing_mine_auto":
             return
 
-        if is_recording_playing():
+        if (
+            is_recording_playing()
+            or is_recording_playback_paused()
+        ):
             self.shadowing_job = self.after(
                 SHADOWING_POLL_MS,
                 self.poll_shadowing_mine_auto,
             )
             return
+
+        self.hide_shadowing_pause_button()
 
         self.shadowing_state = "between_comparison"
         self.status_label.configure(
@@ -2281,6 +2460,7 @@ class EnglishReaderApp(ctk.CTk):
             return
 
         stop_recording_playback()
+        self.hide_shadowing_pause_button()
         replay_audio()
 
         self.shadowing_state = "playing_reference_auto"
@@ -2315,6 +2495,7 @@ class EnglishReaderApp(ctk.CTk):
     def finish_shadowing_comparison(self):
         self.shadowing_state = "ready"
         self.playback_state = "finished"
+        self.hide_shadowing_pause_button()
         self.clear_word_highlight()
 
         self.shadowing_button.configure(
@@ -2352,6 +2533,7 @@ class EnglishReaderApp(ctk.CTk):
 
         self.shadowing_state = "playing_mine_manual"
         self.playback_state = "paused"
+        self.show_shadowing_pause_button()
         self.set_non_shadowing_controls_enabled(
             False
         )
@@ -2378,12 +2560,17 @@ class EnglishReaderApp(ctk.CTk):
         if self.shadowing_state != "playing_mine_manual":
             return
 
-        if is_recording_playing():
+        if (
+            is_recording_playing()
+            or is_recording_playback_paused()
+        ):
             self.shadowing_job = self.after(
                 SHADOWING_POLL_MS,
                 self.poll_shadowing_mine_manual,
             )
             return
+
+        self.hide_shadowing_pause_button()
 
         self.shadowing_state = "ready"
         self.restore_after_shadowing()
@@ -2397,6 +2584,7 @@ class EnglishReaderApp(ctk.CTk):
 
         self.cancel_shadowing_job()
         stop_recording_playback()
+        self.hide_shadowing_pause_button()
         self.stop_progress_updates()
 
         replay_audio()
@@ -2508,6 +2696,8 @@ class EnglishReaderApp(ctk.CTk):
 
         self.shadowing_recording_started_at = None
         self.shadowing_countdown_value = 0
+        self.reset_shadowing_pause_tracking()
+        self.hide_shadowing_pause_button()
 
         if self.shadowing_state not in {
             "idle",
