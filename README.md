@@ -8,6 +8,10 @@ read the auto-generated IPA guide, and record yourself shadowing the reference a
 ![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey)
 
 ---
+<img width="1920" height="1048" alt="Captura desde 2026-09-02 18-33-03" src="https://github.com/user-attachments/assets/eb137821-add0-499c-acc9-f4edd44b364c" />
+
+
+---
 
 ## Purpose
 
@@ -179,83 +183,6 @@ you to generate again instead of playing stale audio.
 
 ---
 
-## Building a distributable
-
-A PyInstaller spec is already committed and adapts to the host platform:
-
-```bash
-pip install pyinstaller
-pyinstaller "English Reader.spec"
-```
-
-| Host | Output | Icon |
-|---|---|---|
-| macOS | `dist/English Reader.app` | `assets/EnglishReader.icns` |
-| Linux | `dist/English Reader/English Reader` | none (PyInstaller rejects `.icns` outside macOS) |
-
-The spec is windowed (`console=False`) on both. PyInstaller builds for the platform
-it runs on, so a Linux build must be produced on Linux.
-
-Generated audio goes to the per-user data directory rather than next to the frozen
-modules, so a read-only bundle is no longer a problem.
-
----
-
-## Project structure
-
-The project uses the standard `src` layout: the importable package lives under
-`src/`, static files under `assets/`, and everything the app generates at runtime
-stays out of the repository entirely.
-
-```
-english_reader/
-├── src/
-│   └── english_reader/
-│       ├── __init__.py             # Package version
-│       ├── __main__.py             # `python -m english_reader`
-│       ├── app.py                  # CustomTkinter UI, playback state machine, shortcuts
-│       ├── config.py               # Accent → voice map, speed rates, phonemizer languages
-│       ├── paths.py                # Per-user data directory for generated audio
-│       ├── pdf_service.py          # PDF loading and per-page text extraction
-│       ├── audio_player.py         # Portable playback (sounddevice + soundfile)
-│       ├── tts_service.py          # edge-tts synthesis, word-boundary alignment, playback API
-│       ├── recording_service.py    # Microphone capture, WAV I/O, cue beep, playback
-│       └── pronunciation_service.py  # IPA, chunking, linking, stress, weak forms, intonation
-├── assets/
-│   └── EnglishReader.icns          # App icon (used by the macOS bundle)
-├── pyproject.toml                  # Metadata, dependencies, entry point, tool config
-├── requirements.txt                # Pinned runtime dependencies (mirrors pyproject.toml)
-├── English Reader.spec             # PyInstaller definition (macOS bundle / Linux dir)
-├── LICENSE.md                      # PolyForm Noncommercial 1.0.0
-└── README.md
-```
-
-The package is flat on purpose: seven modules with distinct responsibilities do not need
-subpackages. `app.py` is the exception — at ~2900 lines it is by far the largest module
-and the natural next thing to split, but that is a separate change.
-
-### How the pieces fit
-
-```
-app.py  ──►  pdf_service.PdfDocument  (open once, one page of text per request)
-   │
-   ├──►  tts_service.generate_audio_sync()   ──►  output.mp3 + word boundaries
-   │                        │
-   │                        ├──►  align_word_boundaries()  (spoken word → char offset)
-   │                        └──►  audio_player.AudioPlayer  (playback + seek)
-   │
-   ├──►  pronunciation_service.generate_reading_guide(text, boundaries, accent)
-   │              └── espeak IPA + timing-derived pauses/chunks
-   │
-   └──►  recording_service  (shadowing capture + comparison playback)
-                            └──►  audio_player.AudioPlayer
-```
-
-`tts_service` requests `WordBoundary` events from `edge-tts` and maps each spoken word
-back to a character range in the original text. That mapping is what powers the
-highlight, the click-to-play, the single-word repeat, and the pause detection in the
-Reading Guide.
-
 ### Audio playback
 
 Playback is isolated in `audio_player.py` behind a single `AudioPlayer` class, used by
@@ -332,21 +259,3 @@ read-only bundle.
 - Scanned PDFs (images without a text layer) yield nothing: the app reports the empty
   page instead of running OCR.
 - `edge-tts` is an unofficial client for Microsoft Edge's read-aloud service.
-
----
-
-## License
-
-**Source-available, not open source.** Licensed under the
-[PolyForm Noncommercial License 1.0.0](LICENSE.md).
-
-You are free to read, study, run, modify and share this code for any
-**noncommercial** purpose — personal study, hobby projects, research, and use by
-schools, universities, NGOs and public institutions.
-
-**Any commercial use requires written permission.** That includes selling it,
-bundling it into a paid product, running it inside a for-profit company, or
-offering it as a paid or ad-supported service.
-
-> ⚠️ `phonemizer` and `espeak-ng` are GPL-3.0. See the *Scope* section of
-> [LICENSE.md](LICENSE.md) before redistributing any prebuilt binary.
